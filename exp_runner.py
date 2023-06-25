@@ -1,5 +1,4 @@
 import os
-import time
 import logging
 import argparse
 import numpy as np
@@ -9,7 +8,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from shutil import copyfile
-from icecream import ic
 from tqdm import tqdm
 from pyhocon import ConfigFactory
 from models.dataset import Dataset
@@ -67,9 +65,13 @@ class Runner:
         params_to_train += list(self.sdf_network.parameters())
         params_to_train += list(self.deviation_network.parameters())
         params_to_train += list(self.color_network.parameters())
-        params_to_train += list(self.dataset.pose_network.parameters())
-        params_to_train += list(self.dataset.intrinsic_network.parameters())
 
+        self.intrinsic_optimizer = torch.optim.Adam(
+            self.dataset.intrinsic_network.parameters(), lr=self.learning_rate
+        )
+        self.pose_optimizer = torch.optim.Adam(
+            self.dataset.pose_network.parameters(), lr=self.learning_rate
+        )
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
 
         self.renderer = NeuSRenderer(self.nerf_outside,
@@ -144,8 +146,12 @@ class Runner:
                    mask_loss * self.mask_weight
 
             self.optimizer.zero_grad()
+            self.intrinsic_optimizer.zero_grad()
+            self.pose_optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            self.intrinsic_optimizer.step()
+            self.pose_optimizer.step()
 
             self.iter_step += 1
 
@@ -195,6 +201,12 @@ class Runner:
         for g in self.optimizer.param_groups:
             g['lr'] = self.learning_rate * learning_factor
 
+        for g in self.intrinsic_optimizer.param_groups:
+            g['lr'] = self.learning_rate * learning_factor
+
+        for g in self.pose_optimizer.param_groups:
+            g['lr'] = self.learning_rate * learning_factor
+
     def file_backup(self):
         dir_lis = self.conf['general.recording']
         os.makedirs(os.path.join(self.base_exp_dir, 'recording'), exist_ok=True)
@@ -210,11 +222,15 @@ class Runner:
 
     def load_checkpoint(self, checkpoint_name):
         checkpoint = torch.load(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name), map_location=self.device)
+        self.dataset.intrinsic_network.load_state_dict(checkpoint['intrinsic_network'])
+        self.dataset.pose_network.load_state_dict(checkpoint['pose_network'])
         self.nerf_outside.load_state_dict(checkpoint['nerf'])
         self.sdf_network.load_state_dict(checkpoint['sdf_network_fine'])
         self.deviation_network.load_state_dict(checkpoint['variance_network_fine'])
         self.color_network.load_state_dict(checkpoint['color_network_fine'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.intrinsic_optimizer.load_state_dict(checkpoint['intrinsic_optimizer'])
+        self.pose_optimizer.load_state_dict(checkpoint['pose_optimizer'])
         self.iter_step = checkpoint['iter_step']
 
         logging.info('End')
@@ -225,7 +241,11 @@ class Runner:
             'sdf_network_fine': self.sdf_network.state_dict(),
             'variance_network_fine': self.deviation_network.state_dict(),
             'color_network_fine': self.color_network.state_dict(),
+            'intrinsic_network': self.dataset.intrinsic_network.state_dict(),
+            'pose_network': self.dataset.pose_network.state_dict(),
             'optimizer': self.optimizer.state_dict(),
+            'intrinsic_optimizer': self.intrinsic_optimizer.state_dict(),
+            'pose_optimizer': self.pose_optimizer.state_dict(),
             'iter_step': self.iter_step,
         }
 
