@@ -75,18 +75,23 @@ class Dataset:
             self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
             self.pose_all.append(torch.from_numpy(pose).float())
 
-        # Camera Networks
-        self.pose_network = LearnPose(num_cams=len(self.pose_all), learn_R=True, learn_t=True)
-        self.intrinsic_network = LearnFocal(H=self.images_np.shape[1], W=self.images_np.shape[2], req_grad=True, fx_only=False)
-
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
         self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0]
+        self.camera_center = [self.intrinsics_all[0][0, 2], self.intrinsics_all[0][1, 2]]
         self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
         self.H, self.W = self.images.shape[1], self.images.shape[2]
         self.image_pixels = self.H * self.W
+
+        # Camera Networks
+        self.pose_network = LearnPose(
+            num_cams=len(self.pose_all), learn_R=True, learn_t=True, init_c2w=self.pose_all
+        )
+        self.intrinsic_network = LearnFocal(
+            H=self.H, W=self.W, req_grad=True, fx_only=False, init_focal=self.focal, init_center=self.camera_center
+        )
 
         object_bbox_min = np.array([-1.01, -1.01, -1.01, 1.0])
         object_bbox_max = np.array([ 1.01,  1.01,  1.01, 1.0])
@@ -173,4 +178,3 @@ class Dataset:
     def image_at(self, idx, resolution_level):
         img = cv.imread(self.images_lis[idx])
         return (cv.resize(img, (self.W // resolution_level, self.H // resolution_level))).clip(0, 255)
-

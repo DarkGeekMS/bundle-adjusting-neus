@@ -173,16 +173,16 @@ class LearnFocal(nn.Module):
                     exit()
                 self.fx = nn.Parameter(coe_x, requires_grad=req_grad)  # (1, )
                 self.fy = nn.Parameter(coe_y, requires_grad=req_grad)  # (1, )
-        
+
         if init_center is None:
             self.cx = nn.Parameter(torch.tensor(0.0, dtype=torch.float32), requires_grad=req_grad)  # (1, )
             self.cy = nn.Parameter(torch.tensor(0.0, dtype=torch.float32), requires_grad=req_grad)  # (1, )
         else:
             self.cx = nn.Parameter(
-                torch.tensor(init_center, requires_grad=False).float(), requires_grad=req_grad
+                torch.tensor(init_center[0], requires_grad=False).float(), requires_grad=req_grad
             )  # (1, )
             self.cy = nn.Parameter(
-                torch.tensor(init_center, requires_grad=False).float(), requires_grad=req_grad
+                torch.tensor(init_center[1], requires_grad=False).float(), requires_grad=req_grad
             )  # (1, )
 
     def forward(self, inverse=False):
