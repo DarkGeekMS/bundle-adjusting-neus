@@ -4,9 +4,9 @@ import argparse
 import numpy as np
 import cv2 as cv
 import trimesh
+import wandb
 import torch
 import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
 from shutil import copyfile
 from tqdm import tqdm
 from pyhocon import ConfigFactory
@@ -30,6 +30,7 @@ class Runner:
         self.conf['dataset.data_dir'] = self.conf['dataset.data_dir'].replace('CASE_NAME', case)
         self.base_exp_dir = self.conf['general.base_exp_dir']
         os.makedirs(self.base_exp_dir, exist_ok=True)
+        self.exp_name = self.conf['general.exp_name']
         self.dataset = Dataset(self.conf['dataset'])
         self.iter_step = 0
 
@@ -53,7 +54,11 @@ class Runner:
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []
-        self.writer = None
+        
+        # Initialize WandB run
+        wandb.init(project="sparse_bundle_neus", config=vars(self.conf))
+        wandb.run.name = self.exp_name
+        wandb.run.save()
 
         # Networks
         params_to_train = []
@@ -100,7 +105,6 @@ class Runner:
             self.file_backup()
 
     def train(self):
-        self.writer = SummaryWriter(log_dir=os.path.join(self.base_exp_dir, 'logs'))
         self.update_learning_rate()
         res_step = self.end_iter - self.iter_step
         image_perm = self.get_image_perm()
@@ -155,13 +159,15 @@ class Runner:
 
             self.iter_step += 1
 
-            self.writer.add_scalar('Loss/loss', loss, self.iter_step)
-            self.writer.add_scalar('Loss/color_loss', color_fine_loss, self.iter_step)
-            self.writer.add_scalar('Loss/eikonal_loss', eikonal_loss, self.iter_step)
-            self.writer.add_scalar('Statistics/s_val', s_val.mean(), self.iter_step)
-            self.writer.add_scalar('Statistics/cdf', (cdf_fine[:, :1] * mask).sum() / mask_sum, self.iter_step)
-            self.writer.add_scalar('Statistics/weight_max', (weight_max * mask).sum() / mask_sum, self.iter_step)
-            self.writer.add_scalar('Statistics/psnr', psnr, self.iter_step)
+            wandb.log({
+                'Loss/loss': loss,
+                'Loss/color_loss': color_fine_loss,
+                'Loss/eikonal_loss': eikonal_loss,
+                'Statistics/s_val': s_val.mean(),
+                'Statistics/cdf': (cdf_fine[:, :1] * mask).sum() / mask_sum,
+                'Statistics/weight_max': (weight_max * mask).sum() / mask_sum,
+                'Statistics/psnr': psnr
+            })
 
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
