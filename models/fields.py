@@ -14,6 +14,7 @@ class SDFNetwork(nn.Module):
                  n_layers,
                  skip_in=(4,),
                  multires=0,
+                 barf_c2f=[0.4,0.7],
                  bias=0.5,
                  scale=1,
                  geometric_init=True,
@@ -30,9 +31,13 @@ class SDFNetwork(nn.Module):
             self.embed_fn_fine = embed_fn
             dims[0] = input_ch
 
+        self.progress = torch.nn.Parameter(torch.tensor(0.))
+
         self.num_layers = len(dims)
         self.skip_in = skip_in
         self.scale = scale
+        self.multires = multires
+        self.barf_c2f = barf_c2f
 
         for l in range(0, self.num_layers - 1):
             if l + 1 in self.skip_in:
@@ -73,6 +78,8 @@ class SDFNetwork(nn.Module):
         inputs = inputs * self.scale
         if self.embed_fn_fine is not None:
             inputs = self.embed_fn_fine(inputs)
+            if self.barf_c2f is not None:
+                inputs = self.c2f_pos_encode(inputs)
 
         x = inputs
         for l in range(0, self.num_layers - 1):
@@ -86,6 +93,20 @@ class SDFNetwork(nn.Module):
             if l < self.num_layers - 2:
                 x = self.activation(x)
         return torch.cat([x[:, :1] / self.scale, x[:, 1:]], dim=-1)
+
+    def c2f_pos_encode(self, x):
+        # set weights for different frequency bands
+        start, end = self.barf_c2f
+        alpha = (self.progress.data - start) / (end - start) * self.multires
+        k = torch.arange(self.multires, dtype=torch.float32, device=x.device)
+        # TODO: should be multiplied by PI?
+        weight = (1 - (alpha - k).clamp_(min=0, max=1).mul_(np.pi).cos_()) / 2
+        # apply weights
+        x_enc = x[:, 3:].view((-1, self.multires, 6)).permute((0, 2, 1))
+        shape = x_enc.shape
+        x_enc = (x_enc.reshape(-1, self.multires) * weight).reshape(*shape)
+        x[:, 3:] = x_enc.permute((0, 2, 1)).reshape((-1, self.multires * 6))
+        return x
 
     def sdf(self, x):
         return self.forward(x)[:, :1]
@@ -118,6 +139,7 @@ class RenderingNetwork(nn.Module):
                  n_layers,
                  weight_norm=True,
                  multires_view=0,
+                 barf_c2f=[0.4,0.7],
                  squeeze_out=True):
         super().__init__()
 
@@ -131,7 +153,11 @@ class RenderingNetwork(nn.Module):
             self.embedview_fn = embedview_fn
             dims[0] += (input_ch - 3)
 
+        self.progress = torch.nn.Parameter(torch.tensor(0.))
+
         self.num_layers = len(dims)
+        self.multires_view = multires_view
+        self.barf_c2f = barf_c2f
 
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -147,6 +173,8 @@ class RenderingNetwork(nn.Module):
     def forward(self, points, normals, view_dirs, feature_vectors):
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
+            if self.barf_c2f is not None:
+                view_dirs = self.c2f_pos_encode(view_dirs)
 
         rendering_input = None
 
@@ -170,6 +198,20 @@ class RenderingNetwork(nn.Module):
         if self.squeeze_out:
             x = torch.sigmoid(x)
         return x
+    
+    def c2f_pos_encode(self, x):
+        # set weights for different frequency bands
+        start, end = self.barf_c2f
+        alpha = (self.progress.data - start) / (end - start) * self.multires_view
+        k = torch.arange(self.multires_view, dtype=torch.float32, device=x.device)
+        # TODO: should be multiplied by PI?
+        weight = (1 - (alpha - k).clamp_(min=0, max=1).mul_(np.pi).cos_()) / 2
+        # apply weights
+        x_enc = x[:, 3:].view((-1, self.multires_view, 6)).permute((0, 2, 1))
+        shape = x_enc.shape
+        x_enc = (x_enc.reshape(-1, self.multires_view) * weight).reshape(*shape)
+        x[:, 3:] = x_enc.permute((0, 2, 1)).reshape((-1, self.multires_view * 6))
+        return x
 
 
 # This implementation is borrowed from nerf-pytorch: https://github.com/yenchenlin/nerf-pytorch
@@ -181,6 +223,7 @@ class NeRF(nn.Module):
                  d_in_view=3,
                  multires=0,
                  multires_view=0,
+                 barf_c2f=[0.4,0.7],
                  output_ch=4,
                  skips=[4],
                  use_viewdirs=False):
@@ -204,8 +247,13 @@ class NeRF(nn.Module):
             self.embed_fn_view = embed_fn_view
             self.input_ch_view = input_ch_view
 
+        self.progress = torch.nn.Parameter(torch.tensor(0.))
+
         self.skips = skips
         self.use_viewdirs = use_viewdirs
+        self.multires = multires
+        self.multires_view = multires_view
+        self.barf_c2f = barf_c2f
 
         self.pts_linears = nn.ModuleList(
             [nn.Linear(self.input_ch, W)] +
@@ -229,8 +277,12 @@ class NeRF(nn.Module):
     def forward(self, input_pts, input_views):
         if self.embed_fn is not None:
             input_pts = self.embed_fn(input_pts)
+            if self.barf_c2f is not None:
+                input_pts = self.c2f_pos_encode(input_pts, num_freq=self.multires)
         if self.embed_fn_view is not None:
             input_views = self.embed_fn_view(input_views)
+            if self.barf_c2f is not None:
+                input_views = self.c2f_pos_encode(input_views, num_freq=self.multires_view)
 
         h = input_pts
         for i, l in enumerate(self.pts_linears):
@@ -252,6 +304,20 @@ class NeRF(nn.Module):
             return alpha, rgb
         else:
             assert False
+    
+    def c2f_pos_encode(self, x, num_freq):
+        # set weights for different frequency bands
+        start, end = self.barf_c2f
+        alpha = (self.progress.data - start) / (end - start) * num_freq
+        k = torch.arange(num_freq, dtype=torch.float32, device=x.device)
+        # TODO: should be multiplied by PI?
+        weight = (1 - (alpha - k).clamp_(min=0, max=1).mul_(np.pi).cos_()) / 2
+        # apply weights
+        x_enc = x[:, 3:].view((-1, num_freq, 6)).permute((0, 2, 1))
+        shape = x_enc.shape
+        x_enc = (x_enc.reshape(-1, num_freq) * weight).reshape(*shape)
+        x[:, 3:] = x_enc.permute((0, 2, 1)).reshape((-1, num_freq * 6))
+        return x
 
 
 class SingleVarianceNetwork(nn.Module):

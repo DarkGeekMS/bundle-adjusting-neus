@@ -159,6 +159,10 @@ class Runner:
 
             self.iter_step += 1
 
+            self.sdf_network.progress.data.fill_(self.iter_step / self.end_iter)
+            self.color_network.progress.data.fill_(self.iter_step / self.end_iter)
+            self.nerf_outside.progress.data.fill_(self.iter_step / self.end_iter)
+
             wandb.log({
                 'Loss/loss': loss,
                 'Loss/color_loss': color_fine_loss,
