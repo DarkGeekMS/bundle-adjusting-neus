@@ -51,6 +51,8 @@ class Dataset:
 
         self.init_pose = conf.get_bool('init_pose', default=True)
         self.init_intrinsic = conf.get_bool('init_intrinsic', default=True)
+        self.learn_pose = conf.get_bool('learn_pose', default=True)
+        self.learn_intrinsic = conf.get_bool('learn_intrinsic', default=True)
 
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
@@ -91,19 +93,19 @@ class Dataset:
         # Camera Networks
         if self.init_pose:
             self.pose_network = LearnPose(
-                num_cams=len(self.pose_all), learn_R=True, learn_t=True, init_c2w=self.pose_all
+                num_cams=len(self.pose_all), learn_R=self.learn_pose, learn_t=self.learn_pose, init_c2w=self.pose_all
             ).to(self.device)
         else:
             self.pose_network = LearnPose(
-                num_cams=len(self.pose_all), learn_R=True, learn_t=True, init_c2w=None
+                num_cams=len(self.pose_all), learn_R=self.learn_pose, learn_t=self.learn_pose, init_c2w=None
             ).to(self.device)
         if self.init_intrinsic:
             self.intrinsic_network = LearnFocal(
-                H=self.H, W=self.W, req_grad=True, fx_only=False, init_focal=self.focal, init_center=self.camera_center
+                H=self.H, W=self.W, req_grad=self.learn_intrinsic, fx_only=False, init_focal=self.focal, init_center=self.camera_center
             ).to(self.device)
         else:
             self.intrinsic_network = LearnFocal(
-                H=self.H, W=self.W, req_grad=True, fx_only=False, init_focal=None, init_center=None
+                H=self.H, W=self.W, req_grad=self.learn_intrinsic, fx_only=False, init_focal=None, init_center=None
             ).to(self.device)
 
         object_bbox_min = np.array([-1.01, -1.01, -1.01, 1.0])

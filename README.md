@@ -1,6 +1,6 @@
-# Neus In The Wild
+# NeuS In The Wild
 
-Neus with no prior camera parameters and sparse views
+NeuS with no prior camera parameters and sparse views
 
 ## Usage
 
