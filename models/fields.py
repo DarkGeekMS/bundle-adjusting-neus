@@ -78,7 +78,7 @@ class SDFNetwork(nn.Module):
         inputs = inputs * self.scale
         if self.embed_fn_fine is not None:
             inputs = self.embed_fn_fine(inputs)
-            if self.barf_c2f is not None:
+            if len(self.barf_c2f):
                 inputs = self.c2f_pos_encode(inputs)
 
         x = inputs
@@ -115,16 +115,17 @@ class SDFNetwork(nn.Module):
         return self.forward(x)
 
     def gradient(self, x):
-        x.requires_grad_(True)
-        y = self.sdf(x)
-        d_output = torch.ones_like(y, requires_grad=False, device=y.device)
-        gradients = torch.autograd.grad(
-            outputs=y,
-            inputs=x,
-            grad_outputs=d_output,
-            create_graph=True,
-            retain_graph=True,
-            only_inputs=True)[0]
+        with torch.enable_grad():
+            x.requires_grad_(True)
+            y = self.sdf(x)
+            d_output = torch.ones_like(y, requires_grad=False, device=y.device)
+            gradients = torch.autograd.grad(
+                outputs=y,
+                inputs=x,
+                grad_outputs=d_output,
+                create_graph=True,
+                retain_graph=True,
+                only_inputs=True)[0]
         return gradients.unsqueeze(1)
 
 
@@ -173,7 +174,7 @@ class RenderingNetwork(nn.Module):
     def forward(self, points, normals, view_dirs, feature_vectors):
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
-            if self.barf_c2f is not None:
+            if len(self.barf_c2f):
                 view_dirs = self.c2f_pos_encode(view_dirs)
 
         rendering_input = None
@@ -277,11 +278,11 @@ class NeRF(nn.Module):
     def forward(self, input_pts, input_views):
         if self.embed_fn is not None:
             input_pts = self.embed_fn(input_pts)
-            if self.barf_c2f is not None:
+            if len(self.barf_c2f):
                 input_pts = self.c2f_pos_encode(input_pts, num_freq=self.multires)
         if self.embed_fn_view is not None:
             input_views = self.embed_fn_view(input_views)
-            if self.barf_c2f is not None:
+            if len(self.barf_c2f):
                 input_views = self.c2f_pos_encode(input_views, num_freq=self.multires_view)
 
         h = input_pts

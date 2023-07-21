@@ -1,4 +1,4 @@
-# NeuS In The Wild
+# Bundle-Adjusting NeuS
 
 NeuS with no prior camera parameters and sparse views
 

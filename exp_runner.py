@@ -13,6 +13,15 @@ from pyhocon import ConfigFactory
 from models.dataset import Dataset
 from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, NeRF
 from models.renderer import NeuSRenderer
+from models.losses import ScaleAndShiftInvariantLoss
+
+
+def get_normal_loss(normal_pred, normal_gt):
+    normal_gt = torch.nn.functional.normalize(normal_gt, p=2, dim=-1)
+    normal_pred = torch.nn.functional.normalize(normal_pred, p=2, dim=-1)
+    l1 = torch.abs(normal_pred - normal_gt).sum(dim=-1).mean()
+    cos = (1.0 - torch.sum(normal_pred * normal_gt, dim=-1)).mean()
+    return l1 + cos
 
 
 class Runner:
@@ -54,7 +63,10 @@ class Runner:
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []
-        
+
+        # Losses
+        self.depth_loss_fn = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
+
         # Initialize WandB run
         wandb.init(project="sparse_bundle_neus", config=vars(self.conf))
         wandb.run.name = self.exp_name
@@ -112,7 +124,7 @@ class Runner:
         for iter_i in tqdm(range(res_step)):
             data = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
 
-            rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
+            rays_o, rays_d, true_rgb, mask, depth, normal = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10], data[:, 10: 11], data[:, 11: 14]
             near, far = self.dataset.near_far_from_sphere(rays_o, rays_d)
 
             background_rgb = None
@@ -135,6 +147,8 @@ class Runner:
             gradient_error = render_out['gradient_error']
             weight_max = render_out['weight_max']
             weight_sum = render_out['weight_sum']
+            depth_pred = render_out['depth_fine']
+            normal_pred = render_out['normal_fine']
 
             # Loss
             color_error = (color_fine - true_rgb) * mask
@@ -145,9 +159,18 @@ class Runner:
 
             mask_loss = F.binary_cross_entropy(weight_sum.clip(1e-3, 1.0 - 1e-3), mask)
 
+            depth_loss = self.depth_loss_fn(depth_pred.reshape(1, 32, 32), (depth * 50 + 0.5).reshape(1, 32, 32), mask.reshape(1, 32, 32))
+
+            rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
+            normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
+
+            normal_loss = get_normal_loss(normal_pred[:, :, 0], normal)
+
             loss = color_fine_loss +\
-                   eikonal_loss * self.igr_weight +\
-                   mask_loss * self.mask_weight
+                eikonal_loss * self.igr_weight +\
+                mask_loss * self.mask_weight +\
+                depth_loss +\
+                normal_loss
 
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
@@ -167,6 +190,8 @@ class Runner:
                 'Loss/loss': loss,
                 'Loss/color_loss': color_fine_loss,
                 'Loss/eikonal_loss': eikonal_loss,
+                'Loss/depth_loss': depth_loss,
+                'Loss/normal_loss': normal_loss,
                 'Statistics/s_val': s_val.mean(),
                 'Statistics/cdf': (cdf_fine[:, :1] * mask).sum() / mask_sum,
                 'Statistics/weight_max': (weight_max * mask).sum() / mask_sum,
@@ -175,7 +200,12 @@ class Runner:
 
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
-                print('iter:{:8>d} loss = {} lr={}'.format(self.iter_step, loss, self.optimizer.param_groups[0]['lr']))
+                print(
+                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} depth_loss={} normal_loss={} psnr={} lr={}'.format(
+                        self.iter_step, loss, color_fine_loss, eikonal_loss, depth_loss,
+                        normal_loss, psnr, self.optimizer.param_groups[0]['lr']
+                    )
+                )
 
             if self.iter_step % self.save_freq == 0:
                 self.save_checkpoint()
@@ -277,6 +307,7 @@ class Runner:
 
         out_rgb_fine = []
         out_normal_fine = []
+        out_depth_fine = []
 
         for rays_o_batch, rays_d_batch in zip(rays_o, rays_d):
             near, far = self.dataset.near_far_from_sphere(rays_o_batch, rays_d_batch)
@@ -293,28 +324,31 @@ class Runner:
 
             if feasible('color_fine'):
                 out_rgb_fine.append(render_out['color_fine'].detach().cpu().numpy())
-            if feasible('gradients') and feasible('weights'):
-                n_samples = self.renderer.n_samples + self.renderer.n_importance
-                normals = render_out['gradients'] * render_out['weights'][:, :n_samples, None]
-                if feasible('inside_sphere'):
-                    normals = normals * render_out['inside_sphere'][..., None]
-                normals = normals.sum(dim=1).detach().cpu().numpy()
-                out_normal_fine.append(normals)
+            if feasible('normal_fine'):
+                out_normal_fine.append(render_out['normal_fine'].detach().cpu().numpy())
+            if feasible('depth_fine'):
+                out_depth_fine.append(render_out['depth_fine'].detach().cpu().numpy())
             del render_out
 
         img_fine = None
         if len(out_rgb_fine) > 0:
             img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3, -1]) * 256).clip(0, 255)
 
+        depth_fine = None
+        if len(out_depth_fine) > 0:
+            depth_fine = np.concatenate(out_depth_fine, axis=0).reshape([H, W, 1, -1])
+            depth_fine[depth_fine < 0] = 0
+
         normal_img = None
         if len(out_normal_fine) > 0:
             normal_img = np.concatenate(out_normal_fine, axis=0)
-            rot = np.linalg.inv(self.dataset.pose_all[idx, :3, :3].detach().cpu().numpy())
+            rot = np.linalg.inv(self.dataset.pose_network(idx)[:3, :3].detach().cpu().numpy())
             normal_img = (np.matmul(rot[None, :, :], normal_img[:, :, None])
                           .reshape([H, W, 3, -1]) * 128 + 128).clip(0, 255)
 
         os.makedirs(os.path.join(self.base_exp_dir, 'validations_fine'), exist_ok=True)
         os.makedirs(os.path.join(self.base_exp_dir, 'normals'), exist_ok=True)
+        os.makedirs(os.path.join(self.base_exp_dir, 'depths'), exist_ok=True)
 
         for i in range(img_fine.shape[-1]):
             if len(out_rgb_fine) > 0:
@@ -328,6 +362,11 @@ class Runner:
                                         'normals',
                                         '{:0>8d}_{}_{}.png'.format(self.iter_step, i, idx)),
                            normal_img[..., i])
+            if len(out_depth_fine) > 0:
+                cv.imwrite(os.path.join(self.base_exp_dir,
+                                        'depths',
+                                        '{:0>8d}_{}_{}.png'.format(self.iter_step, i, idx)),
+                                        (255 * depth_fine[..., i] / depth_fine[..., i].max()).astype(np.uint8))
 
     def render_novel_image(self, idx_0, idx_1, ratio, resolution_level):
         """

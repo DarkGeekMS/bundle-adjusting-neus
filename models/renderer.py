@@ -270,8 +270,18 @@ class NeuSRenderer:
                                             dim=-1) - 1.0) ** 2
         gradient_error = (relax_inside_sphere * gradient_error).sum() / (relax_inside_sphere.sum() + 1e-5)
 
+        # Compute depth
+        depth = (mid_z_vals * weights[:, :n_samples]).sum(dim=1, keepdim=True)
+
+        # Compute normals
+        normal = gradients.reshape(batch_size, n_samples, 3) * weights[:, :n_samples, None]
+        normal = normal * inside_sphere[..., None]
+        normal = normal.sum(dim=1)
+
         return {
             'color': color,
+            'depth': depth,
+            'normal': normal,
             'sdf': sdf,
             'dists': dists,
             'gradients': gradients.reshape(batch_size, n_samples, 3),
@@ -360,6 +370,8 @@ class NeuSRenderer:
                                     cos_anneal_ratio=cos_anneal_ratio)
 
         color_fine = ret_fine['color']
+        depth_fine = ret_fine['depth']
+        normal_fine = ret_fine['normal']
         weights = ret_fine['weights']
         weights_sum = weights.sum(dim=-1, keepdim=True)
         gradients = ret_fine['gradients']
@@ -367,6 +379,8 @@ class NeuSRenderer:
 
         return {
             'color_fine': color_fine,
+            'depth_fine': depth_fine,
+            'normal_fine': normal_fine,
             's_val': s_val,
             'cdf_fine': ret_fine['cdf'],
             'weight_sum': weights_sum,

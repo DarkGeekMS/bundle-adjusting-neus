@@ -7,7 +7,7 @@ from glob import glob
 from icecream import ic
 from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
-from models.camera import LearnPose, LearnFocal
+from models.camera import LearnPose, LearnFocal, make_c2w
 
 
 # This function is borrowed from IDR: https://github.com/lioryariv/idr
@@ -54,13 +54,19 @@ class Dataset:
         self.learn_pose = conf.get_bool('learn_pose', default=True)
         self.learn_intrinsic = conf.get_bool('learn_intrinsic', default=True)
 
+        self.noise_magnitude = conf.get_float('noise_magnitude', default=0.1)
+
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
-        self.images_lis = sorted(glob(os.path.join(self.data_dir, 'image/*.png')))
+        self.images_lis = sorted(glob(os.path.join(self.data_dir, '*_rgb.png')))
         self.n_images = len(self.images_lis)
         self.images_np = np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
-        self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
+        self.masks_lis = sorted(glob(os.path.join(self.data_dir, '*_foreground_mask.png')))
         self.masks_np = np.stack([cv.imread(im_name) for im_name in self.masks_lis]) / 256.0
+        self.depth_lis = sorted(glob(os.path.join(self.data_dir, '*_depth.npy')))
+        self.depths_np = np.stack([np.load(im_name)[..., None] for im_name in self.depth_lis])
+        self.normal_lis = sorted(glob(os.path.join(self.data_dir, '*_normal.npy')))
+        self.normals_np = np.stack([(np.load(im_name) * 2.0 - 1.0) for im_name in self.normal_lis])
 
         # world_mat is a projection matrix from world to image
         self.world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
@@ -77,11 +83,20 @@ class Dataset:
             P = world_mat @ scale_mat
             P = P[:3, :4]
             intrinsics, pose = load_K_Rt_from_P(None, P)
+            scale = 384 / 1200
+            offset = (1600 - 1200) * 0.5
+            intrinsics[0, 2] -= offset
+            intrinsics[:2, :] *= scale
             self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
-            self.pose_all.append(torch.from_numpy(pose).float())
+            rot_noise = torch.randn(3, device='cpu') * self.noise_magnitude
+            trans_noise = torch.randn(3, device='cpu') * self.noise_magnitude
+            c2w_noise = make_c2w(rot_noise, trans_noise)
+            self.pose_all.append(c2w_noise @ torch.from_numpy(pose).float())
 
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
+        self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        self.depths = torch.from_numpy(self.depths_np.astype(np.float32)).cpu()  # [n_images, H, W, 1]
+        self.normals = torch.from_numpy(self.normals_np.astype(np.float32)).permute((0, 2, 3, 1)).cpu()  # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
         self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0].cpu()
@@ -142,12 +157,14 @@ class Dataset:
         pixels_y = torch.randint(low=0, high=self.H, size=[batch_size])
         color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
         mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+        depth = self.depths[img_idx][(pixels_y, pixels_x)]    # batch_size, 1
+        normal = self.normals[img_idx][(pixels_y, pixels_x)]  # batch_size, 3
         p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).float()  # batch_size, 3
         p = torch.matmul(self.intrinsic_network(inverse=True)[:3, :3], p[:, :, None]).squeeze() # batch_size, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
         rays_v = torch.matmul(self.pose_network(img_idx)[:3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
         rays_o = self.pose_network(img_idx)[:3, 3].expand(rays_v.shape) # batch_size, 3
-        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1]], dim=-1).cuda()    # batch_size, 10
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], depth, normal], dim=-1).cuda()    # batch_size, 14
 
     def gen_rays_between(self, idx_0, idx_1, ratio, resolution_level=1):
         """
