@@ -14,6 +14,7 @@ from models.dataset import Dataset
 from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, NeRF
 from models.renderer import NeuSRenderer
 from models.losses import ScaleAndShiftInvariantLoss
+from utils.camera_pose_visualizer import CameraPoseVisualizer
 
 
 def get_normal_loss(normal_pred, normal_gt):
@@ -212,6 +213,7 @@ class Runner:
 
             if self.iter_step % self.val_freq == 0:
                 self.validate_image()
+                self.validate_camera_poses()
 
             if self.iter_step % self.val_mesh_freq == 0:
                 self.validate_mesh()
@@ -367,6 +369,19 @@ class Runner:
                                         'depths',
                                         '{:0>8d}_{}_{}.png'.format(self.iter_step, i, idx)),
                                         (255 * depth_fine[..., i] / depth_fine[..., i].max()).astype(np.uint8))
+
+    def validate_camera_poses(self):
+        os.makedirs(os.path.join(self.base_exp_dir, 'cameras'), exist_ok=True)
+        visualizer = CameraPoseVisualizer([-2.0, 2.0], [-2.0, 2.0], [-2.0, 2.0])
+        for cam_idx in range(self.dataset.n_images):
+            gt_pose = self.dataset.pose_all[cam_idx].cpu().numpy()
+            pred_pose = self.dataset.pose_network(cam_idx).detach().cpu().numpy()
+            visualizer.extrinsic2pyramid(gt_pose, 'g', 0.5)
+            visualizer.extrinsic2pyramid(pred_pose, 'r', 0.5)
+        visualizer.customize_legend()
+        visualizer.save(
+            os.path.join(self.base_exp_dir, 'cameras', '{:0>8d}.png'.format(self.iter_step))
+        )
 
     def render_novel_image(self, idx_0, idx_1, ratio, resolution_level):
         """
