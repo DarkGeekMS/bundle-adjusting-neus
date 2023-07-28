@@ -13,8 +13,13 @@ from pyhocon import ConfigFactory
 from models.dataset import Dataset
 from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, NeRF
 from models.renderer import NeuSRenderer
-from models.losses import ScaleAndShiftInvariantLoss
+from models.distortion import LearnDistortion
 from utils.camera_pose_visualizer import CameraPoseVisualizer
+
+
+def get_depth_loss(depth_pred, depth_gt):
+    loss = F.l1_loss(depth_pred, depth_gt, reduction='sum') / float(depth_pred.shape[0])
+    return loss
 
 
 def get_normal_loss(normal_pred, normal_gt):
@@ -57,6 +62,9 @@ class Runner:
         self.use_white_bkgd = self.conf.get_bool('train.use_white_bkgd')
         self.warm_up_end = self.conf.get_float('train.warm_up_end', default=0.0)
         self.anneal_end = self.conf.get_float('train.anneal_end', default=0.0)
+        self.learn_scale = self.conf.get_int('train.learn_scale')
+        self.learn_shift = self.conf.get_int('train.learn_shift')
+        self.fix_scaleN = self.conf.get_int('train.fix_scaleN')
 
         # Weights
         self.igr_weight = self.conf.get_float('train.igr_weight')
@@ -65,8 +73,10 @@ class Runner:
         self.mode = mode
         self.model_list = []
 
-        # Losses
-        self.depth_loss_fn = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
+        # Depth Distortion Network
+        self.distortion_network = LearnDistortion(
+            self.dataset.n_images, learn_scale=self.learn_scale, learn_shift=self.learn_shift, fix_scaleN=self.fix_scaleN
+        ).to(device=self.device)
 
         # Initialize WandB run
         wandb.init(project="sparse_bundle_neus", config=vars(self.conf))
@@ -89,6 +99,9 @@ class Runner:
         )
         self.pose_optimizer = torch.optim.Adam(
             self.dataset.pose_network.parameters(), lr=self.learning_rate
+        )
+        self.distortion_optimizer = torch.optim.Adam(
+            self.distortion_network.parameters(), lr=self.learning_rate
         )
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
 
@@ -160,7 +173,11 @@ class Runner:
 
             mask_loss = F.binary_cross_entropy(weight_sum.clip(1e-3, 1.0 - 1e-3), mask)
 
-            depth_loss = self.depth_loss_fn(depth_pred.reshape(1, 32, 32), (depth * 50 + 0.5).reshape(1, 32, 32), mask.reshape(1, 32, 32))
+            scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
+
+            depth_loss = get_depth_loss(
+                depth_pred.reshape(1, 32, 32), (depth * scale_gt + shift_gt).reshape(1, 32, 32), mask.reshape(1, 32, 32)
+            )
 
             rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
             normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
@@ -176,10 +193,12 @@ class Runner:
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
             self.pose_optimizer.zero_grad()
+            self.distortion_optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
             self.intrinsic_optimizer.step()
             self.pose_optimizer.step()
+            self.distortion_optimizer.step()
 
             self.iter_step += 1
 
@@ -249,6 +268,9 @@ class Runner:
         for g in self.pose_optimizer.param_groups:
             g['lr'] = self.learning_rate * learning_factor
 
+        for g in self.distortion_optimizer.param_groups:
+            g['lr'] = self.learning_rate * learning_factor
+
     def file_backup(self):
         dir_lis = self.conf['general.recording']
         os.makedirs(os.path.join(self.base_exp_dir, 'recording'), exist_ok=True)
@@ -266,6 +288,7 @@ class Runner:
         checkpoint = torch.load(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name), map_location=self.device)
         self.dataset.intrinsic_network.load_state_dict(checkpoint['intrinsic_network'])
         self.dataset.pose_network.load_state_dict(checkpoint['pose_network'])
+        self.distortion_network.load_state_dict(checkpoint['distortion_network'])
         self.nerf_outside.load_state_dict(checkpoint['nerf'])
         self.sdf_network.load_state_dict(checkpoint['sdf_network_fine'])
         self.deviation_network.load_state_dict(checkpoint['variance_network_fine'])
@@ -273,6 +296,7 @@ class Runner:
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.intrinsic_optimizer.load_state_dict(checkpoint['intrinsic_optimizer'])
         self.pose_optimizer.load_state_dict(checkpoint['pose_optimizer'])
+        self.distortion_optimizer.load_state_dict(checkpoint['distortion_optimizer'])
         self.iter_step = checkpoint['iter_step']
 
         logging.info('End')
@@ -285,9 +309,11 @@ class Runner:
             'color_network_fine': self.color_network.state_dict(),
             'intrinsic_network': self.dataset.intrinsic_network.state_dict(),
             'pose_network': self.dataset.pose_network.state_dict(),
+            'distortion_network': self.distortion_network.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'intrinsic_optimizer': self.intrinsic_optimizer.state_dict(),
             'pose_optimizer': self.pose_optimizer.state_dict(),
+            'distortion_optimizer': self.distortion_optimizer.state_dict(),
             'iter_step': self.iter_step,
         }
 
