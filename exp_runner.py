@@ -18,7 +18,7 @@ from utils.camera_pose_visualizer import CameraPoseVisualizer
 
 
 def get_depth_loss(depth_pred, depth_gt):
-    loss = F.l1_loss(depth_pred, depth_gt, reduction='sum') / float(depth_pred.shape[0])
+    loss = F.l1_loss(depth_pred, depth_gt, reduction='mean')
     return loss
 
 
@@ -62,13 +62,15 @@ class Runner:
         self.use_white_bkgd = self.conf.get_bool('train.use_white_bkgd')
         self.warm_up_end = self.conf.get_float('train.warm_up_end', default=0.0)
         self.anneal_end = self.conf.get_float('train.anneal_end', default=0.0)
-        self.learn_scale = self.conf.get_int('train.learn_scale')
-        self.learn_shift = self.conf.get_int('train.learn_shift')
-        self.fix_scaleN = self.conf.get_int('train.fix_scaleN')
+        self.learn_scale = self.conf.get_bool('train.learn_scale')
+        self.learn_shift = self.conf.get_bool('train.learn_shift')
+        self.fix_scaleN = self.conf.get_bool('train.fix_scaleN')
 
         # Weights
         self.igr_weight = self.conf.get_float('train.igr_weight')
         self.mask_weight = self.conf.get_float('train.mask_weight')
+        self.depth_weight = self.conf.get_float('train.depth_weight')
+        self.normal_weight = self.conf.get_float('train.normal_weight')
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []
@@ -176,7 +178,7 @@ class Runner:
             scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
 
             depth_loss = get_depth_loss(
-                depth_pred.reshape(1, 32, 32), (depth * scale_gt + shift_gt).reshape(1, 32, 32), mask.reshape(1, 32, 32)
+                depth_pred.reshape(1, 32, 32), (depth * scale_gt + shift_gt).reshape(1, 32, 32)
             )
 
             rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
@@ -187,8 +189,8 @@ class Runner:
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
                 mask_loss * self.mask_weight +\
-                depth_loss +\
-                normal_loss
+                depth_loss * self.depth_weight +\
+                normal_loss * self.normal_weight
 
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
