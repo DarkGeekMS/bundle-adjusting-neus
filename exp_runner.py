@@ -17,16 +17,17 @@ from models.distortion import LearnDistortion
 from utils.camera_pose_visualizer import CameraPoseVisualizer
 
 
-def get_depth_loss(depth_pred, depth_gt):
-    loss = F.l1_loss(depth_pred, depth_gt, reduction='mean')
-    return loss
+def get_depth_loss(depth_pred, depth_gt, mask):
+    depth_error = (depth_pred - depth_gt) * mask
+    depth_loss = F.l1_loss(depth_error, torch.zeros_like(depth_error), reduction='sum') / (mask.sum() + 1e-5)
+    return depth_loss
 
 
-def get_normal_loss(normal_pred, normal_gt):
+def get_normal_loss(normal_pred, normal_gt, mask):
     normal_gt = torch.nn.functional.normalize(normal_gt, p=2, dim=-1)
     normal_pred = torch.nn.functional.normalize(normal_pred, p=2, dim=-1)
-    l1 = torch.abs(normal_pred - normal_gt).sum(dim=-1).mean()
-    cos = (1.0 - torch.sum(normal_pred * normal_gt, dim=-1)).mean()
+    l1 = torch.abs((normal_pred - normal_gt) * mask).sum(dim=-1).sum() / (mask.sum() + 1e-5)
+    cos = (1.0 - torch.sum(normal_pred * normal_gt * mask, dim=-1)).sum() / (mask.sum() + 1e-5)
     return l1 + cos
 
 
@@ -177,14 +178,12 @@ class Runner:
 
             scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
 
-            depth_loss = get_depth_loss(
-                depth_pred.reshape(1, 32, 32), (depth * scale_gt + shift_gt).reshape(1, 32, 32)
-            )
+            depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
 
             rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
             normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
 
-            normal_loss = get_normal_loss(normal_pred[:, :, 0], normal)
+            normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, mask)
 
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
