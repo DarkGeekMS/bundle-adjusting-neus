@@ -66,6 +66,7 @@ class Runner:
         self.learn_scale = self.conf.get_bool('train.learn_scale')
         self.learn_shift = self.conf.get_bool('train.learn_shift')
         self.fix_scaleN = self.conf.get_bool('train.fix_scaleN')
+        self.use_masked_loss = self.conf.get_bool('train.use_masked_loss')
 
         # Weights
         self.igr_weight = self.conf.get_float('train.igr_weight')
@@ -178,12 +179,18 @@ class Runner:
 
             scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
 
-            depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
+            if self.use_masked_loss:
+                depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
+            else:
+                depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
 
             rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
             normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
 
-            normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, mask)
+            if self.use_masked_loss:
+                normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, mask)
+            else:
+                normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
 
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\

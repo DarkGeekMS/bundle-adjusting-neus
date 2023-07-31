@@ -199,7 +199,7 @@ class RenderingNetwork(nn.Module):
         if self.squeeze_out:
             x = torch.sigmoid(x)
         return x
-    
+
     def c2f_pos_encode(self, x):
         # set weights for different frequency bands
         start, end = self.barf_c2f
@@ -279,11 +279,11 @@ class NeRF(nn.Module):
         if self.embed_fn is not None:
             input_pts = self.embed_fn(input_pts)
             if len(self.barf_c2f):
-                input_pts = self.c2f_pos_encode(input_pts, num_freq=self.multires)
+                input_pts = self.c2f_pos_encode_pts(input_pts)
         if self.embed_fn_view is not None:
             input_views = self.embed_fn_view(input_views)
             if len(self.barf_c2f):
-                input_views = self.c2f_pos_encode(input_views, num_freq=self.multires_view)
+                input_views = self.c2f_pos_encode_views(input_views)
 
         h = input_pts
         for i, l in enumerate(self.pts_linears):
@@ -305,19 +305,33 @@ class NeRF(nn.Module):
             return alpha, rgb
         else:
             assert False
-    
-    def c2f_pos_encode(self, x, num_freq):
+
+    def c2f_pos_encode_pts(self, x):
         # set weights for different frequency bands
         start, end = self.barf_c2f
-        alpha = (self.progress.data - start) / (end - start) * num_freq
-        k = torch.arange(num_freq, dtype=torch.float32, device=x.device)
+        alpha = (self.progress.data - start) / (end - start) * self.multires
+        k = torch.arange(self.multires, dtype=torch.float32, device=x.device)
         # TODO: should be multiplied by PI?
         weight = (1 - (alpha - k).clamp_(min=0, max=1).mul_(np.pi).cos_()) / 2
         # apply weights
-        x_enc = x[:, 3:].view((-1, num_freq, 6)).permute((0, 2, 1))
+        x_enc = x[:, 4:].view((-1, self.multires, 8)).permute((0, 2, 1))
         shape = x_enc.shape
-        x_enc = (x_enc.reshape(-1, num_freq) * weight).reshape(*shape)
-        x[:, 3:] = x_enc.permute((0, 2, 1)).reshape((-1, num_freq * 6))
+        x_enc = (x_enc.reshape(-1, self.multires) * weight).reshape(*shape)
+        x[:, 4:] = x_enc.permute((0, 2, 1)).reshape((-1, self.multires * 8))
+        return x
+
+    def c2f_pos_encode_views(self, x):
+        # set weights for different frequency bands
+        start, end = self.barf_c2f
+        alpha = (self.progress.data - start) / (end - start) * self.multires_view
+        k = torch.arange(self.multires_view, dtype=torch.float32, device=x.device)
+        # TODO: should be multiplied by PI?
+        weight = (1 - (alpha - k).clamp_(min=0, max=1).mul_(np.pi).cos_()) / 2
+        # apply weights
+        x_enc = x[:, 3:].view((-1, self.multires_view, 6)).permute((0, 2, 1))
+        shape = x_enc.shape
+        x_enc = (x_enc.reshape(-1, self.multires_view) * weight).reshape(*shape)
+        x[:, 3:] = x_enc.permute((0, 2, 1)).reshape((-1, self.multires_view * 6))
         return x
 
 
