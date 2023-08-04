@@ -15,20 +15,7 @@ from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, N
 from models.renderer import NeuSRenderer
 from models.distortion import LearnDistortion
 from utils.camera_pose_visualizer import CameraPoseVisualizer
-
-
-def get_depth_loss(depth_pred, depth_gt, mask):
-    depth_error = (depth_pred - depth_gt) * mask
-    depth_loss = F.l1_loss(depth_error, torch.zeros_like(depth_error), reduction='sum') / (mask.sum() + 1e-5)
-    return depth_loss
-
-
-def get_normal_loss(normal_pred, normal_gt, mask):
-    normal_gt = torch.nn.functional.normalize(normal_gt, p=2, dim=-1)
-    normal_pred = torch.nn.functional.normalize(normal_pred, p=2, dim=-1)
-    l1 = torch.abs((normal_pred - normal_gt) * mask).sum(dim=-1).sum() / (mask.sum() + 1e-5)
-    cos = (1.0 - torch.sum(normal_pred * normal_gt * mask, dim=-1)).sum() / (mask.sum() + 1e-5)
-    return l1 + cos
+from utils.ssi_depth_loss import ScaleAndShiftInvariantLoss
 
 
 class Runner:
@@ -67,6 +54,7 @@ class Runner:
         self.learn_shift = self.conf.get_bool('train.learn_shift')
         self.fix_scaleN = self.conf.get_bool('train.fix_scaleN')
         self.use_masked_loss = self.conf.get_bool('train.use_masked_loss')
+        self.use_ssi_depth_loss = self.conf.get_bool('train.use_ssi_depth_loss')
 
         # Weights
         self.igr_weight = self.conf.get_float('train.igr_weight')
@@ -81,6 +69,9 @@ class Runner:
         self.distortion_network = LearnDistortion(
             self.dataset.n_images, learn_scale=self.learn_scale, learn_shift=self.learn_shift, fix_scaleN=self.fix_scaleN
         ).to(device=self.device)
+
+        # SSI Depth Loss
+        self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
 
         # Initialize WandB run
         wandb.init(project="sparse_bundle_neus", config=vars(self.conf))
@@ -180,17 +171,17 @@ class Runner:
             scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
 
             if self.use_masked_loss:
-                depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
+                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
             else:
-                depth_loss = get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
+                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
 
             rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
             normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
 
             if self.use_masked_loss:
-                normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, mask)
+                normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, mask)
             else:
-                normal_loss = get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
+                normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
 
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
@@ -249,6 +240,23 @@ class Runner:
 
             if self.iter_step % len(image_perm) == 0:
                 image_perm = self.get_image_perm()
+
+    def get_depth_loss(self, depth_pred, depth_gt, mask):
+        if self.use_ssi_depth_loss:
+            depth_loss = self.depth_loss(
+                depth_pred.reshape(1, 32, 32), depth_gt.reshape(1, 32, 32), mask.reshape(1, 32, 32)
+            )
+        else:
+            depth_error = (depth_pred - depth_gt) * mask
+            depth_loss = F.l1_loss(depth_error, torch.zeros_like(depth_error), reduction='sum') / (mask.sum() + 1e-5)
+        return depth_loss
+
+    def get_normal_loss(self, normal_pred, normal_gt, mask):
+        normal_gt = torch.nn.functional.normalize(normal_gt, p=2, dim=-1)
+        normal_pred = torch.nn.functional.normalize(normal_pred, p=2, dim=-1)
+        l1 = torch.abs((normal_pred - normal_gt) * mask).sum(dim=-1).sum() / (mask.sum() + 1e-5)
+        cos = (1.0 - torch.sum(normal_pred * normal_gt * mask, dim=-1)).sum() / (mask.sum() + 1e-5)
+        return l1 + cos
 
     def get_image_perm(self):
         return torch.randperm(self.dataset.n_images)
