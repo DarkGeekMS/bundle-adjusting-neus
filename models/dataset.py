@@ -8,6 +8,7 @@ from icecream import ic
 from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
 from models.camera import LearnPose, LearnFocal, make_c2w
+from utils.features import load_pair, scale_camera, FeatExt
 
 
 # This function is borrowed from IDR: https://github.com/lioryariv/idr
@@ -94,7 +95,7 @@ class Dataset:
             self.pose_all.append(c2w_noise @ torch.from_numpy(pose).float())
 
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        self.masks = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.depths = torch.from_numpy(self.depths_np.astype(np.float32)).cpu()  # [n_images, H, W, 1]
         self.normals = torch.from_numpy(self.normals_np.astype(np.float32)).permute((0, 2, 3, 1)).cpu()  # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
@@ -122,6 +123,38 @@ class Dataset:
             self.intrinsic_network = LearnFocal(
                 H=self.H, W=self.W, req_grad=self.learn_intrinsic, fx_only=False, init_focal=None, init_center=None
             ).to(self.device)
+
+        # Multi-view Features
+        self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
+        self.num_src = 2
+        self.feat_img_scale = 2
+        self.img_res = self.images.shape[-3:-1]
+
+        self.rgb_2xd = torch.stack([
+            F.interpolate(
+                self.images[idx].reshape(-1, 3).permute(1, 0).view(1, 3, *self.img_res),
+                size=(self.H * self.feat_img_scale, self.W * self.feat_img_scale),
+                mode='bilinear', align_corners=False)[0]
+            for idx in range(self.n_images)
+        ], dim=0)  # [n_images, 3, 768, 768]
+
+        mean = torch.tensor([0.485, 0.456, 0.406]).float().cpu()
+        std = torch.tensor([0.229, 0.224, 0.225]).float().cpu()
+        self.rgb_2xd = (self.rgb_2xd / 2 + 0.5 - mean.view(1, 3, 1, 1)) / std.view(1, 3, 1, 1)
+        self.size = torch.from_numpy(self.scale_mats_np[0]).float()[0, 0] * 2
+        self.center = torch.from_numpy(self.scale_mats_np[0]).float()[:3, 3]
+
+        feat_ext = FeatExt().cuda()
+        feat_ext.eval()
+        for p in feat_ext.parameters():
+            p.requires_grad = False
+        feats = []
+        feat_eval_bs = 20
+        for start_i in range(0, self.n_images, feat_eval_bs):
+            eval_batch = self.rgb_2xd[start_i:start_i + feat_eval_bs]
+            feat2 = feat_ext(eval_batch.cuda())[2].detach().cpu()
+            feats.append(feat2)
+        self.feats = torch.cat(feats, dim=0)
 
         object_bbox_min = np.array([-1.01, -1.01, -1.01, 1.0])
         object_bbox_max = np.array([ 1.01,  1.01,  1.01, 1.0])
@@ -161,10 +194,33 @@ class Dataset:
         normal = self.normals[img_idx][(pixels_y, pixels_x)]  # batch_size, 3
         p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).float()  # batch_size, 3
         p = torch.matmul(self.intrinsic_network(inverse=True)[:3, :3], p[:, :, None]).squeeze() # batch_size, 3
+        rays_v_norm = torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)   # batch_size, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
         rays_v = torch.matmul(self.pose_network(img_idx)[:3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
         rays_o = self.pose_network(img_idx)[:3, 3].expand(rays_v.shape) # batch_size, 3
-        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], depth, normal], dim=-1).cuda()    # batch_size, 14
+        id = self.pair['id_list'][img_idx]
+        src_ids = self.pair[id]['pair']
+        src_idxs = [self.pair[src_id]['index'] for src_id in src_ids][:self.num_src]
+        depth_cam = torch.stack([self.pose_network(img_idx), self.intrinsic_network()], dim=0)
+        cam = scale_camera(depth_cam, self.feat_img_scale)
+        src_cams = torch.stack(
+            [scale_camera(
+                torch.stack([self.pose_network(i), self.intrinsic_network()], dim=0),
+                self.feat_img_scale) for i in src_idxs]
+        )
+        feat_input = {
+            'depth_cams': depth_cam,
+            'size': self.size,
+            'center': self.center,
+            'feat': self.feats[img_idx],
+            'feat_src': self.feats[src_idxs],
+            'cam': cam,
+            'src_cams': src_cams,
+            'rays_v_norm': rays_v_norm,
+            'H': self.H,
+            'W': self.W
+        }
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], depth, normal], dim=-1).cuda(), feat_input  # batch_size, 14
 
     def gen_rays_between(self, idx_0, idx_1, ratio, resolution_level=1):
         """

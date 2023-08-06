@@ -55,6 +55,11 @@ class Runner:
         self.fix_scaleN = self.conf.get_bool('train.fix_scaleN')
         self.use_masked_loss = self.conf.get_bool('train.use_masked_loss')
         self.use_ssi_depth_loss = self.conf.get_bool('train.use_ssi_depth_loss')
+        self.phase_delims = self.conf.get_list('train.phase_delim')
+        self.bias_weights = self.conf.get_list('train.bias_weight')
+        self.feat_weights = self.conf.get_list('train.feat_weight')
+        self.depth_from_inside_only_s = self.conf.get_list('train.depth_from_inside_only')
+        self.object_mask_type = self.conf.get_string('train.object_mask_type')
 
         # Weights
         self.igr_weight = self.conf.get_float('train.igr_weight')
@@ -131,10 +136,15 @@ class Runner:
         image_perm = self.get_image_perm()
 
         for iter_i in tqdm(range(res_step)):
-            data = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
+            data, feat_input = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
 
             rays_o, rays_d, true_rgb, mask, depth, normal = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10], data[:, 10: 11], data[:, 11: 14]
             near, far = self.dataset.near_far_from_sphere(rays_o, rays_d)
+
+            for attr in ['depth_cams', 'size', 'center', 'feat', 'feat_src', 'cam', 'src_cams', 'rays_v_norm']:
+                feat_input[attr] = feat_input[attr].cuda()
+            for attr in ['H', 'W']:
+                feat_input[attr] = feat_input[attr]
 
             background_rgb = None
             if self.use_white_bkgd:
@@ -146,9 +156,13 @@ class Runner:
                 mask = torch.ones_like(mask)
 
             mask_sum = mask.sum() + 1e-5
+            train_phase = self.iter_step / self.end_iter
             render_out = self.renderer.render(rays_o, rays_d, near, far,
                                               background_rgb=background_rgb,
-                                              cos_anneal_ratio=self.get_cos_anneal_ratio())
+                                              cos_anneal_ratio=self.get_cos_anneal_ratio(),
+                                              feat_input=feat_input,
+                                              depth_from_inside_only=self.get_param_in_phase(self.depth_from_inside_only_s, train_phase),
+                                              object_mask_type=self.object_mask_type)
 
             color_fine = render_out['color_fine']
             s_val = render_out['s_val']
@@ -158,6 +172,8 @@ class Runner:
             weight_sum = render_out['weight_sum']
             depth_pred = render_out['depth_fine']
             normal_pred = render_out['normal_fine']
+            bias_loss = render_out['bias_loss']
+            feat_loss = render_out['feat_loss']
 
             # Loss
             color_error = (color_fine - true_rgb) * mask
@@ -183,11 +199,16 @@ class Runner:
             else:
                 normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
 
+            bias_weight = self.get_param_in_phase(self.bias_weights, train_phase)
+            feat_weight = self.get_param_in_phase(self.feat_weights, train_phase)
+
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
                 mask_loss * self.mask_weight +\
                 depth_loss * self.depth_weight +\
-                normal_loss * self.normal_weight
+                normal_loss * self.normal_weight +\
+                bias_loss * bias_weight +\
+                feat_loss * feat_weight
 
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
@@ -211,6 +232,8 @@ class Runner:
                 'Loss/eikonal_loss': eikonal_loss,
                 'Loss/depth_loss': depth_loss,
                 'Loss/normal_loss': normal_loss,
+                'Loss/bias_loss': bias_loss,
+                'Loss/feat_loss': feat_loss,
                 'Statistics/s_val': s_val.mean(),
                 'Statistics/cdf': (cdf_fine[:, :1] * mask).sum() / mask_sum,
                 'Statistics/weight_max': (weight_max * mask).sum() / mask_sum,
@@ -220,9 +243,9 @@ class Runner:
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
                 print(
-                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} depth_loss={} normal_loss={} psnr={} lr={}'.format(
+                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} depth_loss={} normal_loss={} feat_loss={} bias_loss={} psnr={} lr={}'.format(
                         self.iter_step, loss, color_fine_loss, eikonal_loss, depth_loss,
-                        normal_loss, psnr, self.optimizer.param_groups[0]['lr']
+                        normal_loss, feat_loss, bias_loss, psnr, self.optimizer.param_groups[0]['lr']
                     )
                 )
 
@@ -257,6 +280,14 @@ class Runner:
         l1 = torch.abs((normal_pred - normal_gt) * mask).sum(dim=-1).sum() / (mask.sum() + 1e-5)
         cos = (1.0 - torch.sum(normal_pred * normal_gt * mask, dim=-1)).sum() / (mask.sum() + 1e-5)
         return l1 + cos
+
+    def get_param_in_phase(self, param_list, phase):
+        if phase < self.phase_delims[0]:
+            return param_list[0]
+        elif phase < self.phase_delims[1]:
+            return param_list[1]
+        else:
+            return param_list[2]
 
     def get_image_perm(self):
         return torch.randperm(self.dataset.n_images)

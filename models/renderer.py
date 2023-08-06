@@ -1,10 +1,27 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import logging
 import mcubes
-from icecream import ic
+from utils.features import get_feat_loss
+
+
+def find_surface_points(sdf, d_all, device='cuda'):
+    # interpolate SDF zero-crossing points
+    # shape of sdf and d_all: only inside  [B, N_rays, N_samples+N_importance]
+    sdf_bool_1 = sdf[..., 1:] * sdf[..., :-1] < 0  # [B, N_rays, N_samples+N_importance-1]
+    # only find backward facing surface points, not forward facing
+    sdf_bool_2 = sdf[..., 1:] < sdf[..., :-1]
+    sdf_bool = torch.logical_and(sdf_bool_1, sdf_bool_2)  # [B, N_rays, N_samples+N_importance-1]
+    # [B, N_rays]
+    max, max_indices = torch.max(sdf_bool, dim=2)
+    network_mask = max > 0
+    d_surface = torch.zeros_like(network_mask, device=device).float() # [B, N_rays]
+    sdf_0 = torch.gather(sdf[network_mask], 1, max_indices[network_mask][..., None]).squeeze() # [N_masked_rays]
+    sdf_1 = torch.gather(sdf[network_mask], 1, max_indices[network_mask][..., None]+1).squeeze() # [N_masked_rays]
+    d_0 = torch.gather(d_all[network_mask], 1, max_indices[network_mask][..., None]).squeeze() # [N_masked_rays]
+    d_1 = torch.gather(d_all[network_mask], 1, max_indices[network_mask][..., None]+1).squeeze() # [N_masked_rays]
+    d_surface[network_mask] = (sdf_0 * d_1 - sdf_1 * d_0) / (sdf_0-sdf_1) # [N_masked_rays]
+    return d_surface, network_mask  # [B, N_rays]
 
 
 def extract_fields(bound_min, bound_max, resolution, query_func):
@@ -127,6 +144,7 @@ class NeuSRenderer:
             'sampled_color': sampled_color,
             'alpha': alpha,
             'weights': weights,
+            'mid_z_vals_out': mid_z_vals
         }
 
     def up_sample(self, rays_o, rays_d, z_vals, sdf, n_importance, inv_s):
@@ -199,10 +217,15 @@ class NeuSRenderer:
                     sdf_network,
                     deviation_network,
                     color_network,
+                    feat_input=None,
                     background_alpha=None,
                     background_sampled_color=None,
                     background_rgb=None,
-                    cos_anneal_ratio=0.0):
+                    mid_z_vals_out=None,
+                    cos_anneal_ratio=0.0,
+                    depth_from_inside_only=None,
+                    object_mask_type=None
+                    ):
         batch_size, n_samples = z_vals.shape
 
         # Section length
@@ -245,6 +268,7 @@ class NeuSRenderer:
         c = prev_cdf
 
         alpha = ((p + 1e-5) / (c + 1e-5)).reshape(batch_size, n_samples).clip(0.0, 1.0)
+        alpha_in = alpha
 
         pts_norm = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=True).reshape(batch_size, n_samples)
         inside_sphere = (pts_norm < 1.0).float().detach()
@@ -260,6 +284,10 @@ class NeuSRenderer:
 
         weights = alpha * torch.cumprod(torch.cat([torch.ones([batch_size, 1]), 1. - alpha + 1e-7], -1), -1)[:, :-1]
         weights_sum = weights.sum(dim=-1, keepdim=True)
+        if depth_from_inside_only or object_mask_type == "rendering_foreground_network_mask":
+            # [N_rays, N_inside]
+            weights_in = alpha_in * torch.cumprod(torch.cat([torch.ones([batch_size, 1]), 1. - alpha_in + 1e-7], -1), -1)[:, :-1]
+            weights_in_sum = weights_in.sum(dim=-1, keepdim=True)
 
         color = (sampled_color * weights[:, :, None]).sum(dim=1)
         if background_rgb is not None:    # Fixed background, usually black
@@ -278,6 +306,64 @@ class NeuSRenderer:
         normal = normal * inside_sphere[..., None]
         normal = normal.sum(dim=1)
 
+        # Compute feature loss
+        if feat_input is not None:
+            if background_alpha is not None:
+                # [N_rays, N_inside + N_outside]
+                z_final = mid_z_vals_out
+            else:
+                # [N_rays, N_inside]
+                z_final = mid_z_vals
+            if depth_from_inside_only:
+                z_final = mid_z_vals
+            # [N_rays]
+            if depth_from_inside_only:
+                dist_map = torch.sum(weights_in / (weights_in.sum(-1, keepdim=True)+1e-10) * z_final, -1)
+            else:
+                dist_map = torch.sum(weights / (weights.sum(-1, keepdim=True)+1e-10) * z_final, -1)
+            # [1, N_rays, N_inside]
+            sdf_all = sdf.reshape(batch_size, n_samples).unsqueeze(0)
+            # [1, N_rays, N_samples]
+            d_all = mid_z_vals.unsqueeze(0)
+            # [1, N_rays]
+            d_surface, network_mask = find_surface_points(sdf_all, d_all)
+            # [N_rays]
+            d_surface = d_surface.squeeze(0)
+            network_mask = network_mask.squeeze(0)
+            # [N_rays]
+            if object_mask_type == "zero_sdf_mask":
+                object_mask = network_mask
+            elif object_mask_type == "rendering_foreground_network_mask":
+                rendering_foreground_network_mask = weights_in_sum > 0.9
+                object_mask = rendering_foreground_network_mask.squeeze(-1)
+            elif object_mask_type == "ones":
+                object_mask = torch.ones_like(network_mask)
+            else:
+                raise NotImplementedError
+            # [N_rays, 3] = [N_rays,3] +[N_rays, 3] * [N_rays, 1]
+            point_surface = rays_o + rays_d * d_surface[:, None]
+            # [N_masked_rays, 3]
+            point_surface_wmask = point_surface[network_mask & object_mask]
+            # bias_loss
+            # [N_rays, 3]
+            points_rendered = rays_o + rays_d * dist_map[:,None]
+            # [N_rays, 1]
+            sdf_rendered_points = sdf_network(points_rendered)[:, :1]
+            # [N_maskes_rays,1]
+            sdf_rendered_points_wmask = sdf_rendered_points[object_mask]
+            sdf_rendered_points_0 = torch.zeros_like(sdf_rendered_points_wmask)
+            bias_loss = F.l1_loss(sdf_rendered_points_wmask, sdf_rendered_points_0, reduction='mean')
+            # feat_loss
+            feat_loss = get_feat_loss(
+                point_surface_wmask, None, feat_input['feat'].unsqueeze(0),
+                feat_input['cam'].unsqueeze(0), feat_input['feat_src'].unsqueeze(0), feat_input['src_cams'].unsqueeze(0),
+                feat_input['size'].unsqueeze(0), feat_input['center'].unsqueeze(0), network_mask.reshape(-1),
+                object_mask.reshape(-1)
+            )
+        else:
+            bias_loss = torch.tensor(0)
+            feat_loss = torch.tensor(0)
+
         return {
             'color': color,
             'depth': depth,
@@ -290,10 +376,12 @@ class NeuSRenderer:
             'weights': weights,
             'cdf': c.reshape(batch_size, n_samples),
             'gradient_error': gradient_error,
-            'inside_sphere': inside_sphere
+            'inside_sphere': inside_sphere,
+            'bias_loss': bias_loss,
+            'feat_loss': feat_loss
         }
 
-    def render(self, rays_o, rays_d, near, far, perturb_overwrite=-1, background_rgb=None, cos_anneal_ratio=0.0):
+    def render(self, rays_o, rays_d, near, far, perturb_overwrite=-1, background_rgb=None, cos_anneal_ratio=0.0, feat_input=None, depth_from_inside_only=False, object_mask_type="zero_sdf_mask"):
         batch_size = len(rays_o)
         sample_dist = 2.0 / self.n_samples   # Assuming the region of interest is a unit sphere
         z_vals = torch.linspace(0.0, 1.0, self.n_samples)
@@ -324,6 +412,7 @@ class NeuSRenderer:
 
         background_alpha = None
         background_sampled_color = None
+        mid_z_vals_out = None
 
         # Up sample
         if self.n_importance > 0:
@@ -355,6 +444,7 @@ class NeuSRenderer:
 
             background_sampled_color = ret_outside['sampled_color']
             background_alpha = ret_outside['alpha']
+            mid_z_vals_out= ret_outside['mid_z_vals_out']
 
         # Render core
         ret_fine = self.render_core(rays_o,
@@ -364,10 +454,14 @@ class NeuSRenderer:
                                     self.sdf_network,
                                     self.deviation_network,
                                     self.color_network,
+                                    feat_input=feat_input,
                                     background_rgb=background_rgb,
                                     background_alpha=background_alpha,
                                     background_sampled_color=background_sampled_color,
-                                    cos_anneal_ratio=cos_anneal_ratio)
+                                    mid_z_vals_out= mid_z_vals_out,
+                                    cos_anneal_ratio=cos_anneal_ratio,
+                                    object_mask_type=object_mask_type,
+                                    depth_from_inside_only=depth_from_inside_only)
 
         color_fine = ret_fine['color']
         depth_fine = ret_fine['depth']
@@ -388,7 +482,9 @@ class NeuSRenderer:
             'gradients': gradients,
             'weights': weights,
             'gradient_error': ret_fine['gradient_error'],
-            'inside_sphere': ret_fine['inside_sphere']
+            'inside_sphere': ret_fine['inside_sphere'],
+            'bias_loss': ret_fine['bias_loss'],
+            'feat_loss': ret_fine['feat_loss']
         }
 
     def extract_geometry(self, bound_min, bound_max, resolution, threshold=0.0):
