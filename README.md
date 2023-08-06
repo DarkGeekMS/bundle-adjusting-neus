@@ -27,8 +27,8 @@ Here the `cameras_xxx.npz` follows the data format in [IDR](https://github.com/l
 Clone this repository
 
 ```shell
-git clone https://github.com/Totoro97/NeuS.git
-cd NeuS
+git clone https://github.com/DarkGeekMS/bundle-adjusting-neus.git
+cd bundle-adjusting-neus
 pip install -r requirements.txt
 ```
 
@@ -77,6 +77,6 @@ python exp_runner.py --mode interpolate_<img_idx_0>_<img_idx_1> --conf <config_f
 
 The corresponding image set of view interpolation can be found in `exp/<case_name>/<exp_name>/render/`.
 
-### Train NeuS with your custom data
+### Train Bundle-Adjusting NeuS with your custom data
 
-More information can be found in [preprocess_custom_data](https://github.com/Totoro97/NeuS/tree/main/preprocess_custom_data).
+More information can be found in [preprocess_custom_data](https://github.com/DarkGeekMS/bundle-adjusting-neus/tree/main/preprocess_custom_data).
