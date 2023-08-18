@@ -138,7 +138,7 @@ class Runner:
         for iter_i in tqdm(range(res_step)):
             data, feat_input = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
 
-            rays_o, rays_d, true_rgb, mask, depth, normal = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10], data[:, 10: 11], data[:, 11: 14]
+            rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
             near, far = self.dataset.near_far_from_sphere(rays_o, rays_d)
 
             for attr in ['depth_cams', 'size', 'center', 'feat', 'feat_src', 'cam', 'src_cams', 'rays_v_norm']:
@@ -170,8 +170,8 @@ class Runner:
             gradient_error = render_out['gradient_error']
             weight_max = render_out['weight_max']
             weight_sum = render_out['weight_sum']
-            depth_pred = render_out['depth_fine']
-            normal_pred = render_out['normal_fine']
+            # depth_pred = render_out['depth_fine']
+            # normal_pred = render_out['normal_fine']
             bias_loss = render_out['bias_loss']
             feat_loss = render_out['feat_loss']
 
@@ -184,20 +184,20 @@ class Runner:
 
             mask_loss = F.binary_cross_entropy(weight_sum.clip(1e-3, 1.0 - 1e-3), mask)
 
-            scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
+            # scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
 
-            if self.use_masked_loss:
-                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
-            else:
-                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
+            # if self.use_masked_loss:
+            #     depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
+            # else:
+            #     depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
 
-            rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
-            normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
+            # rot = torch.inverse(self.dataset.pose_network(image_perm[self.iter_step % len(image_perm)])[:3, :3])
+            # normal_pred = rot[None, :, :] @ normal_pred[:, :, None]
 
-            if self.use_masked_loss:
-                normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, mask)
-            else:
-                normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
+            # if self.use_masked_loss:
+            #     normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, mask)
+            # else:
+            #     normal_loss = self.get_normal_loss(normal_pred[:, :, 0], normal, torch.ones_like(mask))
 
             bias_weight = self.get_param_in_phase(self.bias_weights, train_phase)
             feat_weight = self.get_param_in_phase(self.feat_weights, train_phase)
@@ -205,8 +205,6 @@ class Runner:
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
                 mask_loss * self.mask_weight +\
-                depth_loss * self.depth_weight +\
-                normal_loss * self.normal_weight +\
                 bias_loss * bias_weight +\
                 feat_loss * feat_weight
 
@@ -230,8 +228,6 @@ class Runner:
                 'Loss/loss': loss,
                 'Loss/color_loss': color_fine_loss,
                 'Loss/eikonal_loss': eikonal_loss,
-                'Loss/depth_loss': depth_loss,
-                'Loss/normal_loss': normal_loss,
                 'Loss/bias_loss': bias_loss,
                 'Loss/feat_loss': feat_loss,
                 'Statistics/s_val': s_val.mean(),
@@ -243,9 +239,9 @@ class Runner:
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
                 print(
-                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} depth_loss={} normal_loss={} feat_loss={} bias_loss={} psnr={} lr={}'.format(
-                        self.iter_step, loss, color_fine_loss, eikonal_loss, depth_loss,
-                        normal_loss, feat_loss, bias_loss, psnr, self.optimizer.param_groups[0]['lr']
+                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} feat_loss={} bias_loss={} psnr={} lr={}'.format(
+                        self.iter_step, loss, color_fine_loss, eikonal_loss,
+                        feat_loss, bias_loss, psnr, self.optimizer.param_groups[0]['lr']
                     )
                 )
 

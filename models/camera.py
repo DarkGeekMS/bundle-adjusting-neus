@@ -59,9 +59,10 @@ def vec2skew(v):
 
 
 def Exp(r):
-    """so(3) vector to SO(3) matrix
+    """
+    so(3) vector to SO(3) matrix
     :param r: (3, ) axis-angle, torch tensor
-    :return:  (3, 3)
+    :return:  (3, 3).
     """
     skew_r = vec2skew(r)  # (3, 3)
     norm_r = r.norm() + 1e-15
@@ -105,35 +106,68 @@ def make_calib(fx, fy, cx, cy):
 
 
 class LearnPose(nn.Module):
-    def __init__(self, num_cams, learn_R, learn_t, init_c2w=None):
+    def __init__(self, num_cams, init_c2w=None, pose_encoding=False, embedding_scale=10):
         """
-        :param num_cams:
-        :param learn_R:  True/False
-        :param learn_t:  True/False
+        :param num_cams: number of camera poses
         :param init_c2w: (N, 4, 4) torch tensor
+        :param pose_encoding True/False, positional encoding or gaussian fourer
+        :param embedding_scale hyperparamer, can also be adapted
         """
         super(LearnPose, self).__init__()
         self.num_cams = num_cams
-        self.init_c2w = None
+        self.embedding_size = 256
+        self.all_points = torch.tensor([(i) for i in range(num_cams)])
         if init_c2w is not None:
             self.init_c2w = nn.Parameter(init_c2w, requires_grad=False)
-
-        self.r = nn.Parameter(torch.zeros(size=(num_cams, 3), dtype=torch.float32), requires_grad=learn_R)  # (N, 3)
-        if init_c2w is not None:
-            self.t = nn.Parameter(torch.zeros(size=(num_cams, 3), dtype=torch.float32), requires_grad=learn_t)  # (N, 3)
         else:
-            self.t = nn.Parameter(
-                torch.tensor([[0.0, 0.0, -2.0] for _ in range(num_cams)], dtype=torch.float32), requires_grad=learn_t
-            )  # (N, 3)
+            self.init_c2w = None
+
+        self.lin1 = nn.Linear(self.embedding_size * 2, 64)
+        self.gelu1 = nn.GELU()
+        self.lin2 = nn.Linear(64, 64)
+        self.gelu2 = nn.GELU()
+        self.lin3 = nn.Linear(64, 6)
+
+        self.embedding_scale = embedding_scale
+
+        if pose_encoding:
+            print("AXIS")
+            posenc_mres = 5
+            self.b = 2. ** np.linspace(0, posenc_mres, self.embedding_size // 2) - 1.
+            self.b = self.b[:, np.newaxis]
+            self.b = np.concatenate([self.b, np.roll(self.b, 1, axis=-1)], 0) + 0
+            self.b = torch.tensor(self.b).float()
+            self.a = torch.ones_like(self.b[:, 0])
+        else:
+            print("FOURIER")
+            self.b = np.random.normal(loc=0.0, scale=self.embedding_scale,
+                                      size=[self.embedding_size, 1])  # * self.embedding_scale
+            self.b = torch.tensor(self.b).float()
+            self.a = torch.ones_like(self.b[:, 0])
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.b = self.b.to(self.device)
+        self.a = self.a.to(self.device)
+        self.all_points = self.all_points.to(self.device)
 
     def forward(self, cam_id):
-        r = self.r[cam_id]  # (3, ) axis-angle
-        t = self.t[cam_id]  # (3, )
-        c2w = make_c2w(r, t)  # (4, 4)
+        cam_id = self.all_points[cam_id]
+        cam_id = cam_id.unsqueeze(0)
 
-        # learn a delta pose between init pose and target pose, if a init pose is provided
+        fourier_features = torch.cat([self.a * torch.sin((2. * np.pi * cam_id) @ self.b.T),
+                                    self.a * torch.cos((2. * np.pi * cam_id) @ self.b.T)],
+                                    axis=-1) / torch.norm(self.a)
+
+        pred = self.lin1(fourier_features)
+        pred = self.gelu1(pred)
+        pred = self.lin2(pred)
+        pred = self.gelu2(pred)
+        pred = self.lin3(pred).squeeze(0)
+        pred[-1] -= 2.0
+
+        c2w = make_c2w(pred[:3], pred[3:])  # (4, 4)
         if self.init_c2w is not None:
-            c2w = c2w @ self.init_c2w[cam_id]
+            c2w = c2w @ self.init_c2w[cam_id][0]
 
         return c2w
 
