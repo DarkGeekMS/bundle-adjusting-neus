@@ -65,7 +65,6 @@ class Runner:
         self.igr_weight = self.conf.get_float('train.igr_weight')
         self.mask_weight = self.conf.get_float('train.mask_weight')
         self.depth_weight = self.conf.get_float('train.depth_weight')
-        self.normal_weight = self.conf.get_float('train.normal_weight')
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []

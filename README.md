@@ -49,16 +49,16 @@ pip install -r requirements.txt
 
 ### Running
 
-- **Training without mask**
+- **Training with no pose priors**
 
 ```shell
-python exp_runner.py --mode train --conf ./confs/womask.conf --case <case_name>
+python exp_runner.py --mode train --conf ./confs/ba_no_poses.conf --case <case_name>
 ```
 
-- **Training with mask**
+- **Training with noisy pose priors**
 
 ```shell
-python exp_runner.py --mode train --conf ./confs/wmask.conf --case <case_name>
+python exp_runner.py --mode train --conf ./confs/ba_noisy_poses.conf --case <case_name>
 ```
 
 - **Extract surface from trained model** 

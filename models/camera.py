@@ -163,7 +163,8 @@ class LearnPose(nn.Module):
         pred = self.lin2(pred)
         pred = self.gelu2(pred)
         pred = self.lin3(pred).squeeze(0)
-        pred[-1] -= 2.0
+        if self.init_c2w is None:
+            pred[-1] -= 2.0
 
         c2w = make_c2w(pred[:3], pred[3:])  # (4, 4)
         if self.init_c2w is not None:
