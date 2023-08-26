@@ -247,7 +247,8 @@ class NeuSRenderer:
         gradients = sdf_network.gradient(pts).squeeze()
         sampled_color = color_network(pts, gradients, dirs, feature_vector).reshape(batch_size, n_samples, 3)
 
-        inv_s = deviation_network(torch.zeros([1, 3]))[:, :1].clip(1e-6, 1e6)           # Single parameter
+        # Inverse standard deviation S (learnable to scale SDF before passing to Sigmoid)
+        inv_s = deviation_network(torch.zeros([1, 3]))[:, :1].clip(1e-6, 1e6)  # Single parameter
         inv_s = inv_s.expand(batch_size * n_samples, 1)
 
         true_cos = (dirs * gradients).sum(-1, keepdim=True)
@@ -261,12 +262,13 @@ class NeuSRenderer:
         estimated_next_sdf = sdf + iter_cos * dists.reshape(-1, 1) * 0.5
         estimated_prev_sdf = sdf - iter_cos * dists.reshape(-1, 1) * 0.5
 
-        prev_cdf = torch.sigmoid(estimated_prev_sdf * inv_s)
-        next_cdf = torch.sigmoid(estimated_next_sdf * inv_s)
+        prev_cdf = torch.sigmoid(estimated_prev_sdf * inv_s)  # Sigmoid(F(p(ti)))
+        next_cdf = torch.sigmoid(estimated_next_sdf * inv_s)  # Sigmoid(F(p(ti+1)))
 
-        p = prev_cdf - next_cdf
-        c = prev_cdf
+        p = prev_cdf - next_cdf  # Sigmoid(F(p(ti))) - Sigmoid(F(p(ti+1)))
+        c = prev_cdf  # Sigmoid(F(p(ti)))
 
+        # Equation (13) in NeuS paper (Discretization) of rho (alpha) - equation (10))
         alpha = ((p + 1e-5) / (c + 1e-5)).reshape(batch_size, n_samples).clip(0.0, 1.0)
         alpha_in = alpha
 
@@ -282,6 +284,7 @@ class NeuSRenderer:
                             background_sampled_color[:, :n_samples] * (1.0 - inside_sphere)[:, :, None]
             sampled_color = torch.cat([sampled_color, background_sampled_color[:, n_samples:]], dim=1)
 
+        # Equation (5) in NeuS paper (weight function using standard NeRF technique and NeuS rho)
         weights = alpha * torch.cumprod(torch.cat([torch.ones([batch_size, 1]), 1. - alpha + 1e-7], -1), -1)[:, :-1]
         weights_sum = weights.sum(dim=-1, keepdim=True)
         if depth_from_inside_only or object_mask_type == "rendering_foreground_network_mask":
@@ -289,6 +292,7 @@ class NeuSRenderer:
             weights_in = alpha_in * torch.cumprod(torch.cat([torch.ones([batch_size, 1]), 1. - alpha_in + 1e-7], -1), -1)[:, :-1]
             weights_in_sum = weights_in.sum(dim=-1, keepdim=True)
 
+        # Equation (11) in NeuS paper (similar to alpha-compositing)
         color = (sampled_color * weights[:, :, None]).sum(dim=1)
         if background_rgb is not None:    # Fixed background, usually black
             color = color + background_rgb * (1.0 - weights_sum)
