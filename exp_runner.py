@@ -515,7 +515,7 @@ class Runner:
 
 
 if __name__ == '__main__':
-    print('Hello Wooden')
+    print('Bundle-Adjusting NeuS')
 
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 

@@ -131,7 +131,6 @@ class LearnPose(nn.Module):
         self.embedding_scale = embedding_scale
 
         if pose_encoding:
-            print("AXIS")
             posenc_mres = 5
             self.b = 2. ** np.linspace(0, posenc_mres, self.embedding_size // 2) - 1.
             self.b = self.b[:, np.newaxis]
@@ -139,7 +138,6 @@ class LearnPose(nn.Module):
             self.b = torch.tensor(self.b).float()
             self.a = torch.ones_like(self.b[:, 0])
         else:
-            print("FOURIER")
             self.b = np.random.normal(loc=0.0, scale=self.embedding_scale,
                                       size=[self.embedding_size, 1])  # * self.embedding_scale
             self.b = torch.tensor(self.b).float()
