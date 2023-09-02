@@ -435,7 +435,7 @@ class Runner:
         os.makedirs(os.path.join(self.base_exp_dir, 'cameras'), exist_ok=True)
         visualizer = CameraPoseVisualizer([-2.0, 2.0], [-2.0, 2.0], [-2.0, 2.0])
         for cam_idx in range(self.dataset.n_images):
-            gt_pose = self.dataset.pose_all[cam_idx].cpu().numpy()
+            gt_pose = self.dataset.pose_all_gt[cam_idx].cpu().numpy()
             pred_pose = self.dataset.pose_network(cam_idx).detach().cpu().numpy()
             visualizer.extrinsic2pyramid(gt_pose, 'g', 0.5)
             visualizer.extrinsic2pyramid(pred_pose, 'r', 0.5)

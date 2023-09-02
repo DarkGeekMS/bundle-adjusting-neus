@@ -76,6 +76,7 @@ class Dataset:
 
         self.intrinsics_all = []
         self.pose_all = []
+        self.pose_all_gt = []
 
         for scale_mat, world_mat in zip(self.scale_mats_np, self.world_mats_np):
             P = world_mat @ scale_mat
@@ -86,6 +87,7 @@ class Dataset:
             trans_noise = torch.randn(3, device='cpu') * self.noise_magnitude
             c2w_noise = make_c2w(rot_noise, trans_noise)
             self.pose_all.append(c2w_noise @ torch.from_numpy(pose).float())
+            self.pose_all_gt.append(torch.from_numpy(pose).float())
 
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.masks = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
@@ -95,6 +97,7 @@ class Dataset:
         self.focal = self.intrinsics_all[0][0, 0].cpu()
         self.camera_center = [self.intrinsics_all[0][0, 2].cpu(), self.intrinsics_all[0][1, 2].cpu()]
         self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
+        self.pose_all_gt = torch.stack(self.pose_all_gt).to(self.device)  # [n_images, 4, 4]
         self.H, self.W = self.images.shape[1], self.images.shape[2]
         self.image_pixels = self.H * self.W
 
