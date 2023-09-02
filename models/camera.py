@@ -106,7 +106,7 @@ def make_calib(fx, fy, cx, cy):
 
 
 class LearnPose(nn.Module):
-    def __init__(self, num_cams, init_c2w=None, pose_encoding=False, embedding_scale=10):
+    def __init__(self, num_cams, init_c2w=None, pose_encoding=False, embedding_scale=10, trans_offset=2.0):
         """
         :param num_cams: number of camera poses
         :param init_c2w: (N, 4, 4) torch tensor
@@ -116,6 +116,7 @@ class LearnPose(nn.Module):
         super(LearnPose, self).__init__()
         self.num_cams = num_cams
         self.embedding_size = 256
+        self.trans_offset = trans_offset
         self.all_points = torch.tensor([(i) for i in range(num_cams)])
         if init_c2w is not None:
             self.init_c2w = nn.Parameter(init_c2w, requires_grad=False)
@@ -162,7 +163,7 @@ class LearnPose(nn.Module):
         pred = self.gelu2(pred)
         pred = self.lin3(pred).squeeze(0)
         if self.init_c2w is None:
-            pred[-1] -= 2.0
+            pred[-1] -= self.trans_offset
 
         c2w = make_c2w(pred[:3], pred[3:])  # (4, 4)
         if self.init_c2w is not None:

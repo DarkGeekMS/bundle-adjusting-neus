@@ -55,6 +55,7 @@ class Dataset:
         self.learn_intrinsic = conf.get_bool('learn_intrinsic', default=True)
 
         self.noise_magnitude = conf.get_float('noise_magnitude', default=0.1)
+        self.trans_offset = conf.get_float('trans_offset', default=2.0)
 
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
@@ -103,9 +104,9 @@ class Dataset:
 
         # Camera Networks
         if self.init_pose:
-            self.pose_network = LearnPose(num_cams=len(self.pose_all), init_c2w=self.pose_all).to(self.device)
+            self.pose_network = LearnPose(num_cams=len(self.pose_all), init_c2w=self.pose_all, trans_offset=self.trans_offset).to(self.device)
         else:
-            self.pose_network = LearnPose(num_cams=len(self.pose_all), init_c2w=None).to(self.device)
+            self.pose_network = LearnPose(num_cams=len(self.pose_all), init_c2w=None, trans_offset=self.trans_offset).to(self.device)
         if self.init_intrinsic:
             self.intrinsic_network = LearnFocal(
                 H=self.H, W=self.W, req_grad=self.learn_intrinsic, fx_only=False, init_focal=self.focal, init_center=self.camera_center
@@ -117,7 +118,7 @@ class Dataset:
 
         # Multi-view Features
         self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
-        self.num_src = 2
+        self.num_src = conf.get_int('num_feat_src', default=2)
         self.feat_img_scale = 2
         self.img_res = self.images.shape[-3:-1]
 
