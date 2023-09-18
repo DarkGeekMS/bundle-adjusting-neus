@@ -7,26 +7,32 @@ from scipy.spatial.transform import Rotation
 from models.dataset import load_K_Rt_from_P
 
 
-def read_camera(camera_path):
+def read_camera(camera_path, is_colmap):
     # load camera
-    camera_dict = np.load(camera_path)
-    try:
+    if is_colmap:
+        camera_params = np.load(camera_path)
         camera_poses = [
-            camera_dict['pose_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
+            camera_params[cam_id][:, :4] for cam_id in range(len(camera_params))
         ]
-    except Exception:
-        world_mats = [
-            camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
-        ]
-        scale_mats = [
-            camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
-        ]
-        camera_poses = []
-        for world_mat, scale_mat in zip(world_mats, scale_mats):
-            P = world_mat @ scale_mat
-            P = P[:3, :4]
-            _, pose = load_K_Rt_from_P(None, P)
-            camera_poses.append(pose)
+    else:
+        camera_dict = np.load(camera_path)
+        try:
+            camera_poses = [
+                camera_dict['pose_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
+            ]
+        except Exception:
+            world_mats = [
+                camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
+            ]
+            scale_mats = [
+                camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)
+            ]
+            camera_poses = []
+            for world_mat, scale_mat in zip(world_mats, scale_mats):
+                P = world_mat @ scale_mat
+                P = P[:3, :4]
+                _, pose = load_K_Rt_from_P(None, P)
+                camera_poses.append(pose)
 
     # extract rotations and translations
     trans_list = []
@@ -40,7 +46,7 @@ def read_camera(camera_path):
     return trans_list, rot_list
 
 
-def render_mesh_from_camera(mesh_path, camera_path, camera_lens, light_position, output_path):
+def render_mesh_from_camera(mesh_path, camera_path, camera_lens, light_position, output_path, is_colmap):
     # clear blender scene
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.select_all(action='DESELECT')
@@ -62,7 +68,7 @@ def render_mesh_from_camera(mesh_path, camera_path, camera_lens, light_position,
     bpy.ops.object.mode_set(mode='OBJECT')
 
     # read camera views
-    trans_list, rot_list = read_camera(camera_path)
+    trans_list, rot_list = read_camera(camera_path, is_colmap)
 
     # loop over all camera views
     for cam_id, (trans, rot) in enumerate(zip(trans_list, rot_list)):
@@ -75,7 +81,8 @@ def render_mesh_from_camera(mesh_path, camera_path, camera_lens, light_position,
         cam.rotation_euler[0] = rot[0]
         cam.rotation_euler[1] = rot[1]
         cam.rotation_euler[2] = rot[2]
-        cam.scale = (-1.0, -1.0, -1.0)
+        if not is_colmap:
+            cam.scale = (-1.0, -1.0, -1.0)
 
         # setup scene light
         light = bpy.data.objects['Light']
@@ -93,13 +100,14 @@ if __name__ == '__main__':
     parser.add_argument('--mesh_path', type=str)
     parser.add_argument('--camera_path', type=str)
     parser.add_argument('--camera_lens', type=float, default=30.0)
-    parser.add_argument('--light_position', type=float, default=10.0)
+    parser.add_argument('--light_position', type=float, default=-10.0)
     parser.add_argument('--output_path', type=str)
+    parser.add_argument('--is_colmap', default=False, action='store_true')
 
     args = parser.parse_args()
 
     os.makedirs(args.output_path, exist_ok=True)
 
     render_mesh_from_camera(
-        args.mesh_path, args.camera_path, args.camera_lens, args.light_position, args.output_path
+        args.mesh_path, args.camera_path, args.camera_lens, args.light_position, args.output_path, args.is_colmap
     )
