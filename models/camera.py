@@ -1,26 +1,45 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from scipy.spatial.transform import Rotation as RotLib
 
 
 def SO3_to_quat(R):
-    """
-    :param R:  (N, 3, 3) or (3, 3) np
-    :return:   (N, 4, ) or (4, ) np
-    """
-    x = RotLib.from_matrix(R)
-    quat = x.as_quat()
+    quat = torch.ones(4).cuda()
+
+    R00 = R[0, 0]
+    R01 = R[0, 1]
+    R02 = R[0, 2]
+    R10 = R[1, 0]
+    R11 = R[1, 1]
+    R12 = R[1, 2]
+    R20 = R[2, 0]
+    R21 = R[2, 1]
+    R22 = R[2, 2]
+
+    quat[0] = torch.sqrt(1.0 + R00 + R11 + R22) / 2
+    quat[1] = (R21 - R12) / (4 * quat[0])
+    quat[2] = (R02 - R20) / (4 * quat[0])
+    quat[3] = (R10 - R01) / (4 * quat[0])
+
     return quat
 
 
 def quat_to_SO3(quat):
-    """
-    :param quat:    (N, 4, ) or (4, ) np
-    :return:        (N, 3, 3) or (3, 3) np
-    """
-    x = RotLib.from_quat(quat)
-    R = x.as_matrix()
+    q = nn.functional.normalize(quat, dim=0)
+    R = torch.ones((3, 3)).cuda()
+    qr = q[0]
+    qi = q[1]
+    qj = q[2]
+    qk = q[3]
+    R[0, 0] = 1-2 * (qj ** 2 + qk ** 2)
+    R[0, 1] = 2 * (qj * qi - qk * qr)
+    R[0, 2] = 2 * (qi * qk + qr * qj)
+    R[1, 0] = 2 * (qj * qi + qk * qr)
+    R[1, 1] = 1-2 * (qi ** 2 + qk ** 2)
+    R[1, 2] = 2 * (qj * qk - qi * qr)
+    R[2, 0] = 2 * (qk * qi - qj * qr)
+    R[2, 1] = 2 * (qj * qk + qi * qr)
+    R[2, 2] = 1-2 * (qi ** 2 + qj ** 2)
     return R
 
 
