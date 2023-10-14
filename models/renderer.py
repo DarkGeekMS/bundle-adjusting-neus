@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 import mcubes
 from utils.features import get_feat_loss
+from utils.point_cloud import transform_pixel_to_world, get_pc_loss
 
 
 def find_surface_points(sdf, d_all, device='cuda'):
@@ -217,6 +218,7 @@ class NeuSRenderer:
                     sdf_network,
                     deviation_network,
                     color_network,
+                    pc_input=None,
                     feat_input=None,
                     background_alpha=None,
                     background_sampled_color=None,
@@ -310,6 +312,32 @@ class NeuSRenderer:
         normal = normal * inside_sphere[..., None]
         normal = normal.sum(dim=1)
 
+        # Compute point cloud loss
+        if pc_input is not None:
+            pc_pixels = pc_input['pc_pixels']
+
+            ref_depth = pc_input['ref_depth'].view(1, -1, 1)
+            ref_camera_mat = torch.unsqueeze(pc_input['ref_cam'][1], 0)
+            ref_world_mat = torch.unsqueeze(pc_input['ref_cam'][0], 0)
+
+            ref_pc = transform_pixel_to_world(pc_pixels, ref_depth, ref_camera_mat, ref_world_mat)
+
+            src_1_depth = pc_input['src_depths'][0].view(1, -1, 1)
+            src_1_camera_mat = torch.unsqueeze(pc_input['src_cams'][0][1], 0)
+            src_1_world_mat = torch.unsqueeze(pc_input['src_cams'][0][0], 0)
+
+            src_1_pc = transform_pixel_to_world(pc_pixels, src_1_depth, src_1_camera_mat, src_1_world_mat)
+
+            src_2_depth = pc_input['src_depths'][1].view(1, -1, 1)
+            src_2_camera_mat = torch.unsqueeze(pc_input['src_cams'][1][1], 0)
+            src_2_world_mat = torch.unsqueeze(pc_input['src_cams'][1][0], 0)
+
+            src_2_pc = transform_pixel_to_world(pc_pixels, src_2_depth, src_2_camera_mat, src_2_world_mat)
+
+            pc_loss = get_pc_loss(src_1_pc, ref_pc) + get_pc_loss(src_2_pc, ref_pc)
+        else:
+            pc_loss = torch.tensor(0)
+
         # Compute feature loss
         if feat_input is not None:
             if background_alpha is not None:
@@ -382,10 +410,11 @@ class NeuSRenderer:
             'gradient_error': gradient_error,
             'inside_sphere': inside_sphere,
             'bias_loss': bias_loss,
-            'feat_loss': feat_loss
+            'feat_loss': feat_loss,
+            'pc_loss': pc_loss
         }
 
-    def render(self, rays_o, rays_d, near, far, perturb_overwrite=-1, background_rgb=None, cos_anneal_ratio=0.0, feat_input=None, depth_from_inside_only=False, object_mask_type="zero_sdf_mask"):
+    def render(self, rays_o, rays_d, near, far, perturb_overwrite=-1, background_rgb=None, cos_anneal_ratio=0.0, pc_input=None, feat_input=None, depth_from_inside_only=False, object_mask_type="zero_sdf_mask"):
         batch_size = len(rays_o)
         sample_dist = 2.0 / self.n_samples   # Assuming the region of interest is a unit sphere
         z_vals = torch.linspace(0.0, 1.0, self.n_samples)
@@ -459,6 +488,7 @@ class NeuSRenderer:
                                     self.deviation_network,
                                     self.color_network,
                                     feat_input=feat_input,
+                                    pc_input=pc_input,
                                     background_rgb=background_rgb,
                                     background_alpha=background_alpha,
                                     background_sampled_color=background_sampled_color,
@@ -488,7 +518,8 @@ class NeuSRenderer:
             'gradient_error': ret_fine['gradient_error'],
             'inside_sphere': ret_fine['inside_sphere'],
             'bias_loss': ret_fine['bias_loss'],
-            'feat_loss': ret_fine['feat_loss']
+            'feat_loss': ret_fine['feat_loss'],
+            'pc_loss': ret_fine['pc_loss']
         }
 
     def extract_geometry(self, bound_min, bound_max, resolution, threshold=0.0):

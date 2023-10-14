@@ -7,7 +7,9 @@ from glob import glob
 from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
 from models.camera import LearnPose, LearnFocal, make_c2w
+from models.distortion import LearnDistortion
 from utils.features import load_pair, scale_camera, FeatExt
+from utils.point_cloud import arange_pixels
 
 
 # This function is borrowed from IDR: https://github.com/lioryariv/idr
@@ -56,6 +58,10 @@ class Dataset:
 
         self.noise_magnitude = conf.get_float('noise_magnitude', default=0.1)
         self.trans_offset = conf.get_float('trans_offset', default=2.0)
+
+        self.learn_scale = self.conf.get_bool('learn_scale')
+        self.learn_shift = self.conf.get_bool('learn_shift')
+        self.fix_scaleN = self.conf.get_bool('fix_scaleN')
 
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
@@ -116,6 +122,11 @@ class Dataset:
                 H=self.H, W=self.W, req_grad=self.learn_intrinsic, fx_only=False, init_focal=None, init_center=None
             ).to(self.device)
 
+        # Depth Distortion Network
+        self.distortion_network = LearnDistortion(
+            self.n_images, learn_scale=self.learn_scale, learn_shift=self.learn_shift, fix_scaleN=self.fix_scaleN
+        ).to(device=self.device)
+
         # Multi-view Features
         self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
         self.num_src = conf.get_int('num_feat_src', default=2)
@@ -146,6 +157,15 @@ class Dataset:
             feat2 = feat_ext(eval_batch.cuda())[2].detach().cpu()
             feats.append(feat2)
         self.feats = torch.cat(feats, dim=0)
+
+        # Point Cloud
+        self.pc_scale = 0.08
+        self.pc_resolution = (int(self.H * self.pc_scale), int(self.W * self.pc_scale))
+        self.pc_scaled_depths = [
+            F.interpolate(torch.unsqueeze(torch.unsqueeze(depth[:, :, 0], 0), 0), self.pc_resolution, mode='nearest') for depth in self.depths
+        ]
+        self.pc_scaled_depths = torch.stack(self.pc_scaled_depths, dim=0)
+        self.pc_pixels = arange_pixels(self.pc_resolution)
 
         object_bbox_min = np.array([-1.01, -1.01, -1.01, 1.0])
         object_bbox_max = np.array([ 1.01,  1.01,  1.01, 1.0])
@@ -182,6 +202,7 @@ class Dataset:
         color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
         mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
         depth = self.depths[img_idx][(pixels_y, pixels_x)]    # batch_size, 1
+        depth = self.undistort_depth(img_idx, depth)          # batch_size, 1
         p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).float()  # batch_size, 3
         p = torch.matmul(self.intrinsic_network(inverse=True)[:3, :3], p[:, :, None]).squeeze() # batch_size, 3
         rays_v_norm = torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)   # batch_size, 3
@@ -210,7 +231,24 @@ class Dataset:
             'H': self.H,
             'W': self.W
         }
-        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], depth], dim=-1).cuda(), feat_input  # batch_size, 11
+        ref_cam = scale_camera(depth_cam, self.pc_scale)
+        ref_depth = self.undistort_depth(img_idx, self.pc_scaled_depths[img_idx])
+        src_cams = torch.stack(
+            [scale_camera(
+                torch.stack([self.pose_network(i), self.intrinsic_network()], dim=0),
+                self.pc_scale) for i in src_idxs]
+        )
+        src_depths = torch.stack(
+            [self.undistort_depth(i, self.pc_scaled_depths[i]) for i in src_idxs]
+        )
+        pc_input = {
+            'ref_cam': ref_cam,
+            'ref_depth': ref_depth,
+            'src_cams': src_cams,
+            'src_depths': src_depths,
+            'pc_pixels': self.pc_pixels
+        }
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], depth.cpu()], dim=-1).cuda(), feat_input, pc_input  # batch_size, 11
 
     def gen_rays_between(self, idx_0, idx_1, ratio, resolution_level=1):
         """
@@ -256,3 +294,9 @@ class Dataset:
     def image_at(self, idx, resolution_level):
         img = cv.imread(self.images_lis[idx])
         return (cv.resize(img, (self.W // resolution_level, self.H // resolution_level))).clip(0, 255)
+
+    def undistort_depth(self, img_idx, depth):
+        depth_copy = depth.clone().to(self.device)
+        dist_scale, dist_shift = self.distortion_network(img_idx)
+        depth_copy = depth_copy * dist_scale + dist_shift
+        return depth_copy

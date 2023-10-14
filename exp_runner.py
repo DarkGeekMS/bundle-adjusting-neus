@@ -13,7 +13,6 @@ from pyhocon import ConfigFactory
 from models.dataset import Dataset
 from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, NeRF
 from models.renderer import NeuSRenderer
-from models.distortion import LearnDistortion
 from utils.camera_pose_visualizer import CameraPoseVisualizer
 from utils.ssi_depth_loss import ScaleAndShiftInvariantLoss
 
@@ -50,9 +49,6 @@ class Runner:
         self.use_white_bkgd = self.conf.get_bool('train.use_white_bkgd')
         self.warm_up_end = self.conf.get_float('train.warm_up_end', default=0.0)
         self.anneal_end = self.conf.get_float('train.anneal_end', default=0.0)
-        self.learn_scale = self.conf.get_bool('train.learn_scale')
-        self.learn_shift = self.conf.get_bool('train.learn_shift')
-        self.fix_scaleN = self.conf.get_bool('train.fix_scaleN')
         self.use_masked_loss = self.conf.get_bool('train.use_masked_loss')
         self.use_ssi_depth_loss = self.conf.get_bool('train.use_ssi_depth_loss')
         self.phase_delims = self.conf.get_list('train.phase_delim')
@@ -65,14 +61,10 @@ class Runner:
         self.igr_weight = self.conf.get_float('train.igr_weight')
         self.mask_weight = self.conf.get_float('train.mask_weight')
         self.depth_weight = self.conf.get_float('train.depth_weight')
+        self.pc_weight = self.conf.get_float('train.pc_weight')
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []
-
-        # Depth Distortion Network
-        self.distortion_network = LearnDistortion(
-            self.dataset.n_images, learn_scale=self.learn_scale, learn_shift=self.learn_shift, fix_scaleN=self.fix_scaleN
-        ).to(device=self.device)
 
         # SSI Depth Loss
         self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
@@ -100,7 +92,7 @@ class Runner:
             self.dataset.pose_network.parameters(), lr=self.learning_rate
         )
         self.distortion_optimizer = torch.optim.Adam(
-            self.distortion_network.parameters(), lr=self.learning_rate
+            self.dataset.distortion_network.parameters(), lr=self.learning_rate
         )
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
 
@@ -135,7 +127,7 @@ class Runner:
         image_perm = self.get_image_perm()
 
         for iter_i in tqdm(range(res_step)):
-            data, feat_input = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
+            data, feat_input, pc_input = self.dataset.gen_random_rays_at(image_perm[self.iter_step % len(image_perm)], self.batch_size)
 
             rays_o, rays_d, true_rgb, mask, depth = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10], data[:, 10: 11]
             near, far = self.dataset.near_far_from_sphere(rays_o, rays_d)
@@ -144,6 +136,9 @@ class Runner:
                 feat_input[attr] = feat_input[attr].cuda()
             for attr in ['H', 'W']:
                 feat_input[attr] = feat_input[attr]
+
+            for attr in ['ref_cam', 'ref_depth', 'src_cams', 'src_depths', 'pc_pixels']:
+                pc_input[attr] = pc_input[attr].cuda()
 
             background_rgb = None
             if self.use_white_bkgd:
@@ -159,6 +154,7 @@ class Runner:
             render_out = self.renderer.render(rays_o, rays_d, near, far,
                                               background_rgb=background_rgb,
                                               cos_anneal_ratio=self.get_cos_anneal_ratio(),
+                                              pc_input=pc_input,
                                               feat_input=feat_input,
                                               depth_from_inside_only=self.get_param_in_phase(self.depth_from_inside_only_s, train_phase),
                                               object_mask_type=self.object_mask_type)
@@ -172,6 +168,7 @@ class Runner:
             depth_pred = render_out['depth_fine']
             bias_loss = render_out['bias_loss']
             feat_loss = render_out['feat_loss']
+            pc_loss = render_out['pc_loss']
 
             # Loss
             color_error = (color_fine - true_rgb) * mask
@@ -182,12 +179,10 @@ class Runner:
 
             mask_loss = F.binary_cross_entropy(weight_sum.clip(1e-3, 1.0 - 1e-3), mask)
 
-            scale_gt, shift_gt = self.distortion_network(image_perm[self.iter_step % len(image_perm)])
-
             if self.use_masked_loss:
-                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), mask)
+                depth_loss = self.get_depth_loss(depth_pred, depth, mask)
             else:
-                depth_loss = self.get_depth_loss(depth_pred, (depth * scale_gt + shift_gt), torch.ones_like(mask))
+                depth_loss = self.get_depth_loss(depth_pred, depth, torch.ones_like(mask))
 
             bias_weight = self.get_param_in_phase(self.bias_weights, train_phase)
             feat_weight = self.get_param_in_phase(self.feat_weights, train_phase)
@@ -197,7 +192,8 @@ class Runner:
                 mask_loss * self.mask_weight +\
                 bias_loss * bias_weight +\
                 feat_loss * feat_weight +\
-                depth_loss * self.depth_weight
+                depth_loss * self.depth_weight +\
+                pc_loss * self.pc_weight
 
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
@@ -222,6 +218,7 @@ class Runner:
                 'Loss/bias_loss': bias_loss,
                 'Loss/feat_loss': feat_loss,
                 'Loss/depth_loss': depth_loss,
+                'Loss/pc_loss': pc_loss,
                 'Statistics/s_val': s_val.mean(),
                 'Statistics/cdf': (cdf_fine[:, :1] * mask).sum() / mask_sum,
                 'Statistics/weight_max': (weight_max * mask).sum() / mask_sum,
@@ -231,9 +228,9 @@ class Runner:
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
                 print(
-                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} feat_loss={} bias_loss={} depth_loss={} psnr={} lr={}'.format(
+                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} feat_loss={} bias_loss={} depth_loss={} pc_loss={} psnr={} lr={}'.format(
                         self.iter_step, loss, color_fine_loss, eikonal_loss,
-                        feat_loss, bias_loss, depth_loss, psnr, self.optimizer.param_groups[0]['lr']
+                        feat_loss, bias_loss, depth_loss, pc_loss, psnr, self.optimizer.param_groups[0]['lr']
                     )
                 )
 
@@ -323,7 +320,7 @@ class Runner:
         checkpoint = torch.load(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name), map_location=self.device)
         self.dataset.intrinsic_network.load_state_dict(checkpoint['intrinsic_network'])
         self.dataset.pose_network.load_state_dict(checkpoint['pose_network'])
-        self.distortion_network.load_state_dict(checkpoint['distortion_network'])
+        self.dataset.distortion_network.load_state_dict(checkpoint['distortion_network'])
         self.nerf_outside.load_state_dict(checkpoint['nerf'])
         self.sdf_network.load_state_dict(checkpoint['sdf_network_fine'])
         self.deviation_network.load_state_dict(checkpoint['variance_network_fine'])
@@ -344,7 +341,7 @@ class Runner:
             'color_network_fine': self.color_network.state_dict(),
             'intrinsic_network': self.dataset.intrinsic_network.state_dict(),
             'pose_network': self.dataset.pose_network.state_dict(),
-            'distortion_network': self.distortion_network.state_dict(),
+            'distortion_network': self.dataset.distortion_network.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'intrinsic_optimizer': self.intrinsic_optimizer.state_dict(),
             'pose_optimizer': self.pose_optimizer.state_dict(),
