@@ -57,7 +57,7 @@ class Runner:
         self.mask_weight = self.conf.get_float('train.mask_weight')
         self.depth_weight = self.conf.get_float('train.depth_weight')
         self.phase_delims = self.conf.get_list('train.phase_delim')
-        self.pc_weights = self.conf.get_float('train.pc_weight')
+        self.pc_weights = self.conf.get_list('train.pc_weight')
         self.bias_weights = self.conf.get_list('train.bias_weight')
         self.feat_weights = self.conf.get_list('train.feat_weight')
         self.depth_from_inside_only_s = self.conf.get_list('train.depth_from_inside_only')
@@ -446,7 +446,7 @@ class Runner:
 
         pc_pixels = self.dataset.pc_pixels
 
-        depth = self.dataset.undistort_depth(idx, self.dataset.pc_scaled_depths[idx])
+        depth = self.dataset.undistort_depth(idx, self.dataset.pc_scaled_depths[idx]).view(1, -1, 1)
         cam = torch.stack([self.dataset.pose_network(idx), self.dataset.intrinsic_network()], dim=0)
         cam = scale_camera(cam, self.dataset.pc_scale)
         camera_mat = torch.unsqueeze(cam[1], 0)
