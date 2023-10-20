@@ -51,17 +51,15 @@ class Runner:
         self.anneal_end = self.conf.get_float('train.anneal_end', default=0.0)
         self.use_masked_loss = self.conf.get_bool('train.use_masked_loss')
         self.use_ssi_depth_loss = self.conf.get_bool('train.use_ssi_depth_loss')
+        self.igr_weight = self.conf.get_float('train.igr_weight')
+        self.mask_weight = self.conf.get_float('train.mask_weight')
+        self.depth_weight = self.conf.get_float('train.depth_weight')
         self.phase_delims = self.conf.get_list('train.phase_delim')
+        self.pc_weights = self.conf.get_float('train.pc_weight')
         self.bias_weights = self.conf.get_list('train.bias_weight')
         self.feat_weights = self.conf.get_list('train.feat_weight')
         self.depth_from_inside_only_s = self.conf.get_list('train.depth_from_inside_only')
         self.object_mask_type = self.conf.get_string('train.object_mask_type')
-
-        # Weights
-        self.igr_weight = self.conf.get_float('train.igr_weight')
-        self.mask_weight = self.conf.get_float('train.mask_weight')
-        self.depth_weight = self.conf.get_float('train.depth_weight')
-        self.pc_weight = self.conf.get_float('train.pc_weight')
         self.is_continue = is_continue
         self.mode = mode
         self.model_list = []
@@ -184,6 +182,7 @@ class Runner:
             else:
                 depth_loss = self.get_depth_loss(depth_pred, depth, torch.ones_like(mask))
 
+            pc_weight = self.get_param_in_phase(self.pc_weights, train_phase)
             bias_weight = self.get_param_in_phase(self.bias_weights, train_phase)
             feat_weight = self.get_param_in_phase(self.feat_weights, train_phase)
 
@@ -193,7 +192,7 @@ class Runner:
                 bias_loss * bias_weight +\
                 feat_loss * feat_weight +\
                 depth_loss * self.depth_weight +\
-                pc_loss * self.pc_weight
+                pc_loss * pc_weight
 
             self.optimizer.zero_grad()
             self.intrinsic_optimizer.zero_grad()
