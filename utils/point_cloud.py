@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def arange_pixels(resolution, batch_size=1, image_range=(-1.0, 1.0)):
@@ -45,6 +46,26 @@ def transform_pixel_to_world(pixels, depth, camera_mat, world_mat, invert=True):
     p_world = p_world[:, :3].permute(0, 2, 1)  # 1 x N x 3
 
     return p_world
+
+
+def visualize_point_cloud(points_3d, save_path):
+    # export 3D point cloud visualization
+    # define 3D plot
+    fig = plt.figure(figsize=(18, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_aspect("auto")
+    ax.set_xlim([-2.0, 2.0])
+    ax.set_ylim([-2.0, 2.0])
+    ax.set_zlim([-2.0, 2.0])
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+
+    # add 3D points as scatter plot
+    ax.scatter(points_3d[:, 0], points_3d[:, 1], points_3d[:, 2])
+
+    # save visualization figure
+    plt.savefig(save_path)
 
 
 def comp_closest_pts_idx_with_split(pts_src, pts_des):

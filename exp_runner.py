@@ -14,6 +14,8 @@ from models.dataset import Dataset
 from models.fields import RenderingNetwork, SDFNetwork, SingleVarianceNetwork, NeRF
 from models.renderer import NeuSRenderer
 from utils.camera_pose_visualizer import CameraPoseVisualizer
+from utils.features import scale_camera
+from utils.point_cloud import transform_pixel_to_world, visualize_point_cloud
 from utils.ssi_depth_loss import ScaleAndShiftInvariantLoss
 
 
@@ -237,8 +239,10 @@ class Runner:
                 self.save_checkpoint()
 
             if self.iter_step % self.val_freq == 0:
-                self.validate_image()
+                idx = np.random.randint(self.dataset.n_images)
+                self.validate_image(idx)
                 self.validate_camera_poses()
+                self.validate_point_cloud(idx)
 
             if self.iter_step % self.val_mesh_freq == 0:
                 self.validate_mesh()
@@ -351,10 +355,7 @@ class Runner:
         os.makedirs(os.path.join(self.base_exp_dir, 'checkpoints'), exist_ok=True)
         torch.save(checkpoint, os.path.join(self.base_exp_dir, 'checkpoints', 'ckpt_{:0>6d}.pth'.format(self.iter_step)))
 
-    def validate_image(self, idx=-1, resolution_level=-1):
-        if idx < 0:
-            idx = np.random.randint(self.dataset.n_images)
-
+    def validate_image(self, idx, resolution_level=-1):
         print('Validate: iter: {}, camera: {}'.format(self.iter_step, idx))
 
         if resolution_level < 0:
@@ -438,6 +439,27 @@ class Runner:
         visualizer.customize_legend()
         visualizer.save(
             os.path.join(self.base_exp_dir, 'cameras', '{:0>8d}.png'.format(self.iter_step))
+        )
+
+    def validate_point_cloud(self, idx):
+        os.makedirs(os.path.join(self.base_exp_dir, 'point_clouds'), exist_ok=True)
+
+        pc_pixels = self.dataset.pc_pixels
+
+        depth = self.dataset.undistort_depth(idx, self.dataset.pc_scaled_depths[idx])
+        cam = torch.stack([self.dataset.pose_network(idx), self.dataset.intrinsic_network()], dim=0)
+        cam = scale_camera(cam, self.dataset.pc_scale)
+        camera_mat = torch.unsqueeze(cam[1], 0)
+        world_mat = torch.unsqueeze(cam[0], 0)
+
+        pc = transform_pixel_to_world(pc_pixels, depth, camera_mat, world_mat)
+
+        pc = pc[0].detach().cpu().numpy()
+
+        visualize_point_cloud(
+            pc, os.path.join(
+                self.base_exp_dir, 'point_clouds', '{:0>8d}_{}.png'.format(self.iter_step, idx)
+            )
         )
 
     def render_novel_image(self, idx_0, idx_1, ratio, resolution_level):
