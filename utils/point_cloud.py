@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 
 def arange_pixels(resolution, batch_size=1, image_range=(-1.0, 1.0)):
@@ -12,24 +12,15 @@ def arange_pixels(resolution, batch_size=1, image_range=(-1.0, 1.0)):
     pixel_locations = torch.meshgrid(torch.arange(0, h), torch.arange(0, w))
     pixel_locations = torch.stack(
         [pixel_locations[1], pixel_locations[0]],
-        dim=-1).long().view(1, -1, 2).repeat(batch_size, 1, 1)
+        dim=-1).long().view(1, -1, 2).repeat(batch_size, 1, 1).float()
 
-    # shift and scale points to match image_range
-    pixel_scaled = pixel_locations.clone().float()
-    scale = (image_range[1] - image_range[0])
-    loc = (image_range[1] - image_range[0]) / 2
-    pixel_scaled[:, :, 0] = scale * pixel_scaled[:, :, 0] / (w - 1) - loc
-    pixel_scaled[:, :, 1] = scale * pixel_scaled[:, :, 1] / (h - 1) - loc
-
-    return pixel_scaled
+    return pixel_locations
 
 
-def transform_pixel_to_world(pixels, depth, camera_mat, world_mat, invert=True):
+def transform_pixel_to_world(pixels, depth, camera_mat, world_mat):
     # transform pixel positions with given depth value to world coordinates
-    # invert camera matrices
-    if invert:
-        camera_mat = torch.inverse(camera_mat)  # 1 x 4 x 4
-        world_mat = torch.inverse(world_mat)  # 1 x 4 x 4
+    # invert camera matrix (get pixel-to-camera transformation)
+    camera_mat = torch.inverse(camera_mat)  # 1 x 4 x 4
 
     # transform pixels to homogeneous coordinates
     pixels = pixels.permute(0, 2, 1)  # 1 x 2 x N
@@ -37,7 +28,7 @@ def transform_pixel_to_world(pixels, depth, camera_mat, world_mat, invert=True):
 
     # project pixels into camera space
     pixels_depth = pixels.clone()
-    pixels_depth[:, :3] = pixels[:, :3] * depth.permute(0, 2, 1)
+    pixels_depth[:, 2] = pixels[:, 2] * depth.permute(0, 2, 1)
 
     # transform pixels to world space
     p_world = world_mat @ camera_mat @ pixels_depth  # 1 x 4 x N
@@ -50,22 +41,11 @@ def transform_pixel_to_world(pixels, depth, camera_mat, world_mat, invert=True):
 
 def visualize_point_cloud(points_3d, save_path):
     # export 3D point cloud visualization
-    # define 3D plot
-    fig = plt.figure(figsize=(18, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_aspect("auto")
-    ax.set_xlim([-2.0, 2.0])
-    ax.set_ylim([-2.0, 2.0])
-    ax.set_zlim([-2.0, 2.0])
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
-
-    # add 3D points as scatter plot
-    ax.scatter(points_3d[:, 0], points_3d[:, 1], points_3d[:, 2])
-
-    # save visualization figure
-    plt.savefig(save_path)
+    x = points_3d[:, 0]
+    y = points_3d[:, 1]
+    z = points_3d[:, 2]
+    fig = go.Figure(data=[go.Scatter3d(x=x, y=y, z=z, mode='markers')])
+    fig.write_html(save_path)
 
 
 def comp_closest_pts_idx_with_split(pts_src, pts_des):

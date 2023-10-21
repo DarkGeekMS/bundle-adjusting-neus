@@ -458,7 +458,7 @@ class Runner:
 
         visualize_point_cloud(
             pc, os.path.join(
-                self.base_exp_dir, 'point_clouds', '{:0>8d}_{}.png'.format(self.iter_step, idx)
+                self.base_exp_dir, 'point_clouds', '{:0>8d}_{}.html'.format(self.iter_step, idx)
             )
         )
 
