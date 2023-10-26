@@ -28,7 +28,7 @@ def transform_pixel_to_world(pixels, depth, camera_mat, world_mat):
 
     # project pixels into camera space
     pixels_depth = pixels.clone()
-    pixels_depth[:, 2] = pixels[:, 2] * depth.permute(0, 2, 1)
+    pixels_depth[:, :3] = pixels[:, :3] * depth.permute(0, 2, 1)
 
     # transform pixels to world space
     p_world = world_mat @ camera_mat @ pixels_depth  # 1 x 4 x N
