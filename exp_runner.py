@@ -58,7 +58,6 @@ class Runner:
         self.depth_weight = self.conf.get_float('train.depth_weight')
         self.phase_delims = self.conf.get_list('train.phase_delim')
         self.pc_weights = self.conf.get_list('train.pc_weight')
-        self.bias_weights = self.conf.get_list('train.bias_weight')
         self.feat_weights = self.conf.get_list('train.feat_weight')
         self.depth_from_inside_only_s = self.conf.get_list('train.depth_from_inside_only')
         self.object_mask_type = self.conf.get_string('train.object_mask_type')
@@ -166,7 +165,6 @@ class Runner:
             weight_max = render_out['weight_max']
             weight_sum = render_out['weight_sum']
             depth_pred = render_out['depth_fine']
-            bias_loss = render_out['bias_loss']
             feat_loss = render_out['feat_loss']
             pc_loss = render_out['pc_loss']
 
@@ -185,13 +183,11 @@ class Runner:
                 depth_loss = self.get_depth_loss(depth_pred, depth, torch.ones_like(mask))
 
             pc_weight = self.get_param_in_phase(self.pc_weights, train_phase)
-            bias_weight = self.get_param_in_phase(self.bias_weights, train_phase)
             feat_weight = self.get_param_in_phase(self.feat_weights, train_phase)
 
             loss = color_fine_loss +\
                 eikonal_loss * self.igr_weight +\
                 mask_loss * self.mask_weight +\
-                bias_loss * bias_weight +\
                 feat_loss * feat_weight +\
                 depth_loss * self.depth_weight +\
                 pc_loss * pc_weight
@@ -216,7 +212,6 @@ class Runner:
                 'Loss/loss': loss,
                 'Loss/color_loss': color_fine_loss,
                 'Loss/eikonal_loss': eikonal_loss,
-                'Loss/bias_loss': bias_loss,
                 'Loss/feat_loss': feat_loss,
                 'Loss/depth_loss': depth_loss,
                 'Loss/pc_loss': pc_loss,
@@ -229,9 +224,9 @@ class Runner:
             if self.iter_step % self.report_freq == 0:
                 print(self.base_exp_dir)
                 print(
-                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} feat_loss={} bias_loss={} depth_loss={} pc_loss={} psnr={} lr={}'.format(
+                    'iter:{:8>d} loss={} color_loss={} eikonal_loss={} feat_loss={} depth_loss={} pc_loss={} psnr={} lr={}'.format(
                         self.iter_step, loss, color_fine_loss, eikonal_loss,
-                        feat_loss, bias_loss, depth_loss, pc_loss, psnr, self.optimizer.param_groups[0]['lr']
+                        feat_loss, depth_loss, pc_loss, psnr, self.optimizer.param_groups[0]['lr']
                     )
                 )
 

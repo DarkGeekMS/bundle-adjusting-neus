@@ -110,7 +110,7 @@ class NeuSRenderer:
 
     def render_core_outside(self, rays_o, rays_d, z_vals, sample_dist, nerf, background_rgb=None):
         """
-        Render background
+        Render background.
         """
         batch_size, n_samples = z_vals.shape
 
@@ -150,7 +150,7 @@ class NeuSRenderer:
 
     def up_sample(self, rays_o, rays_d, z_vals, sdf, n_importance, inv_s):
         """
-        Up sampling give a fixed inv_s
+        Up sampling give a fixed inv_s.
         """
         batch_size, n_samples = z_vals.shape
         pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # n_rays, n_samples, 3
@@ -223,7 +223,6 @@ class NeuSRenderer:
                     background_alpha=None,
                     background_sampled_color=None,
                     background_rgb=None,
-                    mid_z_vals_out=None,
                     cos_anneal_ratio=0.0,
                     depth_from_inside_only=None,
                     object_mask_type=None
@@ -340,19 +339,6 @@ class NeuSRenderer:
 
         # Compute feature loss
         if feat_input is not None:
-            if background_alpha is not None:
-                # [N_rays, N_inside + N_outside]
-                z_final = mid_z_vals_out
-            else:
-                # [N_rays, N_inside]
-                z_final = mid_z_vals
-            if depth_from_inside_only:
-                z_final = mid_z_vals
-            # [N_rays]
-            if depth_from_inside_only:
-                dist_map = torch.sum(weights_in / (weights_in.sum(-1, keepdim=True)+1e-10) * z_final, -1)
-            else:
-                dist_map = torch.sum(weights / (weights.sum(-1, keepdim=True)+1e-10) * z_final, -1)
             # [1, N_rays, N_inside]
             sdf_all = sdf.reshape(batch_size, n_samples).unsqueeze(0)
             # [1, N_rays, N_samples]
@@ -376,15 +362,6 @@ class NeuSRenderer:
             point_surface = rays_o + rays_d * d_surface[:, None]
             # [N_masked_rays, 3]
             point_surface_wmask = point_surface[network_mask & object_mask]
-            # bias_loss
-            # [N_rays, 3]
-            points_rendered = rays_o + rays_d * dist_map[:,None]
-            # [N_rays, 1]
-            sdf_rendered_points = sdf_network(points_rendered)[:, :1]
-            # [N_maskes_rays,1]
-            sdf_rendered_points_wmask = sdf_rendered_points[object_mask]
-            sdf_rendered_points_0 = torch.zeros_like(sdf_rendered_points_wmask)
-            bias_loss = F.l1_loss(sdf_rendered_points_wmask, sdf_rendered_points_0, reduction='mean')
             # feat_loss
             feat_loss = get_feat_loss(
                 point_surface_wmask, None, feat_input['feat'].unsqueeze(0),
@@ -393,7 +370,6 @@ class NeuSRenderer:
                 object_mask.reshape(-1)
             )
         else:
-            bias_loss = torch.tensor(0)
             feat_loss = torch.tensor(0)
 
         return {
@@ -409,7 +385,6 @@ class NeuSRenderer:
             'cdf': c.reshape(batch_size, n_samples),
             'gradient_error': gradient_error,
             'inside_sphere': inside_sphere,
-            'bias_loss': bias_loss,
             'feat_loss': feat_loss,
             'pc_loss': pc_loss
         }
@@ -445,7 +420,6 @@ class NeuSRenderer:
 
         background_alpha = None
         background_sampled_color = None
-        mid_z_vals_out = None
 
         # Up sample
         if self.n_importance > 0:
@@ -477,7 +451,6 @@ class NeuSRenderer:
 
             background_sampled_color = ret_outside['sampled_color']
             background_alpha = ret_outside['alpha']
-            mid_z_vals_out= ret_outside['mid_z_vals_out']
 
         # Render core
         ret_fine = self.render_core(rays_o,
@@ -492,7 +465,6 @@ class NeuSRenderer:
                                     background_rgb=background_rgb,
                                     background_alpha=background_alpha,
                                     background_sampled_color=background_sampled_color,
-                                    mid_z_vals_out= mid_z_vals_out,
                                     cos_anneal_ratio=cos_anneal_ratio,
                                     object_mask_type=object_mask_type,
                                     depth_from_inside_only=depth_from_inside_only)
@@ -517,7 +489,6 @@ class NeuSRenderer:
             'weights': weights,
             'gradient_error': ret_fine['gradient_error'],
             'inside_sphere': ret_fine['inside_sphere'],
-            'bias_loss': ret_fine['bias_loss'],
             'feat_loss': ret_fine['feat_loss'],
             'pc_loss': ret_fine['pc_loss']
         }
