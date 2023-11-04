@@ -129,7 +129,8 @@ class Dataset:
 
         # Multi-view Features
         self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
-        self.num_src = conf.get_int('num_feat_src', default=2)
+        self.num_src = conf.get_int('num_sources', default=2)
+        self.type_src = conf.get_string('type_sources', default='mvs')
         self.feat_img_scale = 2
         self.img_res = self.images.shape[-3:-1]
 
@@ -209,9 +210,12 @@ class Dataset:
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
         rays_v = torch.matmul(self.pose_network(img_idx)[:3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
         rays_o = self.pose_network(img_idx)[:3, 3].expand(rays_v.shape) # batch_size, 3
-        id = self.pair['id_list'][img_idx]
-        src_ids = self.pair[id]['pair']
-        src_idxs = [self.pair[src_id]['index'] for src_id in src_ids][:self.num_src]
+        if self.type_src == 'mvs':
+            id = self.pair['id_list'][img_idx]
+            src_ids = self.pair[id]['pair']
+            src_idxs = [self.pair[src_id]['index'] for src_id in src_ids][:self.num_src]
+        else:
+            src_idxs = [img_idx.item() - 1, (img_idx.item() + 1) % self.n_images]
         depth_cam = torch.stack([self.pose_network(img_idx), self.intrinsic_network()], dim=0)
         cam = scale_camera(depth_cam, self.feat_img_scale)
         src_cams = torch.stack(
