@@ -63,6 +63,9 @@ class Dataset:
         self.learn_shift = self.conf.get_bool('learn_shift')
         self.fix_scaleN = self.conf.get_bool('fix_scaleN')
 
+        self.num_src = conf.get_int('num_sources', default=2)
+        self.type_src = conf.get_string('type_sources', default='mvs')
+
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
         self.images_lis = sorted(glob(os.path.join(self.data_dir, 'image/*.png')))
@@ -128,9 +131,8 @@ class Dataset:
         ).to(device=self.device)
 
         # Multi-view Features
-        self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
-        self.num_src = conf.get_int('num_sources', default=2)
-        self.type_src = conf.get_string('type_sources', default='mvs')
+        if self.type_src == 'mvs':
+            self.pair = load_pair(f'{self.data_dir}/cam4feat/pair.txt')
         self.feat_img_scale = 2
         self.img_res = self.images.shape[-3:-1]
 
@@ -292,6 +294,7 @@ class Dataset:
         b = 2.0 * torch.sum(rays_o * rays_d, dim=-1, keepdim=True)
         mid = 0.5 * (-b) / a
         near = mid - 1.0
+        near.relu_()
         far = mid + 1.0
         return near, far
 
