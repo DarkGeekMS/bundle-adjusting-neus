@@ -9,18 +9,8 @@
     <a href="https://scholar.google.com/citations?user=38yr_I8AAAAJ&hl=en">Mayada M. Hadhoud</a>
 
   </p>
-  <h3 align="center"><a href="https://arxiv.org/abs/2312.15238">Original Paper</a> | <a href="">Extended Paper</a> | <a href="">Project Page</a></h3>
+  <h3 align="center"><a href="https://arxiv.org/abs/2312.15238">Original Paper</a> | <a href="">Extended Paper</a> | <a href="https://darkgeekms.github.io/bundle-adjusting-neus/">Project Page</a></h3>
   <div align="center"></div>
-</p>
-
-<p align="center">
-  <a href="">
-    <img src="./media/results.png" alt="Logo" width="95%">
-  </a>
-</p>
-
-<p align="center">
-Neural implicit surface reconstruction method that extends NeuS by enabling joint camera pose optimization.
 </p>
 
 <p align="center">
@@ -30,7 +20,7 @@ Neural implicit surface reconstruction method that extends NeuS by enabling join
 </p>
 
 <p align="center">
-Overview of the proposed method.
+Neural implicit surface reconstruction method that extends NeuS by enabling joint camera pose optimization.
 </p>
 
 # Installation
