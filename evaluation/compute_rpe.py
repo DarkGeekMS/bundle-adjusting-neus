@@ -1,4 +1,5 @@
 import argparse
+
 import numpy as np
 
 from models.dataset import load_K_Rt_from_P
@@ -19,7 +20,7 @@ def translation_error(pose_error):
     dx = pose_error[0, 3]
     dy = pose_error[1, 3]
     dz = pose_error[2, 3]
-    trans_error = np.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
+    trans_error = np.sqrt(dx**2 + dy**2 + dz**2)
     return trans_error
 
 
@@ -45,19 +46,21 @@ def compute_rpe(gt, pred):
     return rpe_trans, rpe_rot
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gt_path', type=str)
-    parser.add_argument('--pred_path', type=str)
+    parser.add_argument("--gt_path", type=str)
+    parser.add_argument("--pred_path", type=str)
 
     args = parser.parse_args()
 
     gt_camera_dict = np.load(args.gt_path)
     gt_world_mats = [
-        gt_camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(len(gt_camera_dict) // 2)
+        gt_camera_dict["world_mat_%d" % idx].astype(np.float32)
+        for idx in range(len(gt_camera_dict) // 2)
     ]
     gt_scale_mats = [
-        gt_camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(len(gt_camera_dict) // 2)
+        gt_camera_dict["scale_mat_%d" % idx].astype(np.float32)
+        for idx in range(len(gt_camera_dict) // 2)
     ]
     gt_camera_poses = []
     for world_mat, scale_mat in zip(gt_world_mats, gt_scale_mats):
@@ -68,7 +71,8 @@ if __name__ == '__main__':
 
     pred_camera_dict = np.load(args.pred_path)
     pred_camera_poses = [
-        pred_camera_dict['pose_mat_%d' % idx].astype(np.float32) for idx in range(len(pred_camera_dict) // 2)
+        pred_camera_dict["pose_mat_%d" % idx].astype(np.float32)
+        for idx in range(len(pred_camera_dict) // 2)
     ]
 
     rpe_trans, rpe_rot = compute_rpe(gt_camera_poses, pred_camera_poses)

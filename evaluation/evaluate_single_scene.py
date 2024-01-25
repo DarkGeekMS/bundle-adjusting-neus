@@ -1,30 +1,34 @@
 # adapted from https://github.com/autonomousvision/monosdf
-import torch
-import torch.nn.functional as F
+import argparse
+import glob
+import os
+from pathlib import Path
+
 import cv2
 import numpy as np
-import os
-import glob
-from skimage.morphology import binary_dilation, disk
-import argparse
-
+import torch
+import torch.nn.functional as F
 import trimesh
-from pathlib import Path
+from skimage.morphology import binary_dilation, disk
 
 from models.dataset import load_K_Rt_from_P
 
 
 def cull_scan(scan, mesh_path, result_mesh_file, data_path):
     # load poses
-    instance_dir = os.path.join(data_path, 'dtu_scan{0}'.format(scan))
-    image_dir = '{0}/image'.format(instance_dir)
+    instance_dir = os.path.join(data_path, "dtu_scan{0}".format(scan))
+    image_dir = "{0}/image".format(instance_dir)
     image_paths = sorted(glob.glob(os.path.join(image_dir, "*.png")))
     n_images = len(image_paths)
 
-    cam_file = '{0}/cameras.npz'.format(instance_dir)
+    cam_file = "{0}/cameras.npz".format(instance_dir)
     camera_dict = np.load(cam_file)
-    scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
-    world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
+    scale_mats = [
+        camera_dict["scale_mat_%d" % idx].astype(np.float32) for idx in range(n_images)
+    ]
+    world_mats = [
+        camera_dict["world_mat_%d" % idx].astype(np.float32) for idx in range(n_images)
+    ]
 
     intrinsics_all = []
     pose_all = []
@@ -36,7 +40,7 @@ def cull_scan(scan, mesh_path, result_mesh_file, data_path):
         pose_all.append(torch.from_numpy(pose).float())
 
     # load mask
-    mask_dir = '{0}/mask'.format(instance_dir)
+    mask_dir = "{0}/mask".format(instance_dir)
     mask_paths = sorted(glob.glob(os.path.join(mask_dir, "*.png")))
     masks = []
     for p in mask_paths:
@@ -70,23 +74,33 @@ def cull_scan(scan, mesh_path, result_mesh_file, data_path):
             pix_coords[..., 0] /= W - 1
             pix_coords[..., 1] /= H - 1
             pix_coords = (pix_coords - 0.5) * 2
-            valid = ((pix_coords > -1.) & (pix_coords < 1.)).all(dim=-1).float()
+            valid = ((pix_coords > -1.0) & (pix_coords < 1.0)).all(dim=-1).float()
 
             # dialate mask similar to unisurf
-            maski = masks[i][:, :, 0].astype(np.float32) / 256.
+            maski = masks[i][:, :, 0].astype(np.float32) / 256.0
 
-            maski = torch.from_numpy(binary_dilation(maski, disk(12))).float()[None, None].cuda()
+            maski = (
+                torch.from_numpy(binary_dilation(maski, disk(12)))
+                .float()[None, None]
+                .cuda()
+            )
 
-            sampled_mask = F.grid_sample(maski, pix_coords[None, None], mode='nearest', padding_mode='zeros', align_corners=True)[0, -1, 0]
+            sampled_mask = F.grid_sample(
+                maski,
+                pix_coords[None, None],
+                mode="nearest",
+                padding_mode="zeros",
+                align_corners=True,
+            )[0, -1, 0]
 
-            sampled_mask = sampled_mask + (1. - valid)
+            sampled_mask = sampled_mask + (1.0 - valid)
 
             sampled_masks.append(sampled_mask)
 
     sampled_masks = torch.stack(sampled_masks, -1)
 
     # filter
-    mask = (sampled_masks > 0.).all(dim=-1).cpu().numpy()
+    mask = (sampled_masks > 0.0).all(dim=-1).cpu().numpy()
     face_mask = mask[mesh.faces].all(axis=1)
 
     mesh.update_vertices(mask)
@@ -100,15 +114,15 @@ def cull_scan(scan, mesh_path, result_mesh_file, data_path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='Arguments to evaluate the mesh.'
-    )
+    parser = argparse.ArgumentParser(description="Arguments to evaluate the mesh.")
 
-    parser.add_argument('--input_mesh', type=str,  help='path to the mesh to be evaluated')
-    parser.add_argument('--scan_id', type=str,  help='scan id of the input mesh')
-    parser.add_argument('--data_path', type=str,  help='path to the DTU data')
-    parser.add_argument('--gt_path', type=str, help='path to the GT DTU point clouds')
-    parser.add_argument('--output_dir', type=str, help='path to the output folder')
+    parser.add_argument(
+        "--input_mesh", type=str, help="path to the mesh to be evaluated"
+    )
+    parser.add_argument("--scan_id", type=str, help="scan id of the input mesh")
+    parser.add_argument("--data_path", type=str, help="path to the DTU data")
+    parser.add_argument("--gt_path", type=str, help="path to the GT DTU point clouds")
+    parser.add_argument("--output_dir", type=str, help="path to the output folder")
     args = parser.parse_args()
 
     Offical_DTU_Dataset = args.gt_path

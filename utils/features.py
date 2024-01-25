@@ -1,14 +1,15 @@
 # These functions are borrowed from MVSDF: https://github.com/jzhangbs/MVSDF
+from collections import OrderedDict
+from typing import List, Tuple, Union
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Union, Tuple
-from collections import OrderedDict
 
 
-def scale_camera(cam: Union[np.ndarray, torch.Tensor], scale: Union[Tuple, float]=1):
-    """ resize input in order to produce sampled depth map """
+def scale_camera(cam: Union[np.ndarray, torch.Tensor], scale: Union[Tuple, float] = 1):
+    """resize input in order to produce sampled depth map"""
     if type(scale) != tuple:
         scale = (scale, scale)
     if type(cam) == np.ndarray:
@@ -46,33 +47,39 @@ def bin_op_reduce(lst, func):
     return result
 
 
-def idx_world2cam(idx_world_homo, cam):  
+def idx_world2cam(idx_world_homo, cam):
     """nhw41 -> nhw41"""
-    idx_cam_homo = cam[:,0:1,...].unsqueeze(1) @ idx_world_homo  # nhw41
-    idx_cam_homo = idx_cam_homo / (idx_cam_homo[...,-1:,:]+1e-9)   # nhw41
+    idx_cam_homo = cam[:, 0:1, ...].unsqueeze(1) @ idx_world_homo  # nhw41
+    idx_cam_homo = idx_cam_homo / (idx_cam_homo[..., -1:, :] + 1e-9)  # nhw41
     return idx_cam_homo
 
 
-def idx_cam2img(idx_cam_homo, cam):  
+def idx_cam2img(idx_cam_homo, cam):
     """nhw41 -> nhw31"""
-    idx_cam = idx_cam_homo[...,:3,:] / (idx_cam_homo[...,3:4,:]+1e-9)  # nhw31
-    idx_img_homo = cam[:,1:2,:3,:3].unsqueeze(1) @ idx_cam  # nhw31
-    idx_img_homo = idx_img_homo / (idx_img_homo[...,-1:,:]+1e-9)
+    idx_cam = idx_cam_homo[..., :3, :] / (idx_cam_homo[..., 3:4, :] + 1e-9)  # nhw31
+    idx_img_homo = cam[:, 1:2, :3, :3].unsqueeze(1) @ idx_cam  # nhw31
+    idx_img_homo = idx_img_homo / (idx_img_homo[..., -1:, :] + 1e-9)
     return idx_img_homo
 
 
 def normalize_for_grid_sample(input_, grid):
-    size = torch.tensor(input_.size())[2:].flip(0).to(grid.dtype).to(grid.device).view(1,1,1,-1)  # [[[w, h]]]
+    size = (
+        torch.tensor(input_.size())[2:]
+        .flip(0)
+        .to(grid.dtype)
+        .to(grid.device)
+        .view(1, 1, 1, -1)
+    )  # [[[w, h]]]
     grid_n = grid / size
     grid_n = (grid_n * 2 - 1).clamp(-1.1, 1.1)
     return grid_n
 
 
-def get_in_range(grid):  
+def get_in_range(grid):
     """after normalization, keepdim=False"""
     masks = []
     for dim in range(grid.size()[-1]):
-        masks += [grid[..., dim]<=1, grid[..., dim]>=-1]
+        masks += [grid[..., dim] <= 1, grid[..., dim] >= -1]
     in_range = bin_op_reduce(masks, torch.min).to(grid.dtype)
     return in_range
 
@@ -83,23 +90,23 @@ def load_pair(file: str):
     n_cam = int(lines[0])
     pairs = {}
     img_ids = []
-    for i in range(1, 1+2*n_cam, 2):
+    for i in range(1, 1 + 2 * n_cam, 2):
         pair = []
         score = []
         img_id = lines[i].strip()
-        pair_str = lines[i+1].strip().split(' ')
+        pair_str = lines[i + 1].strip().split(" ")
         n_pair = int(pair_str[0])
-        for j in range(1, 1+2*n_pair, 2):
+        for j in range(1, 1 + 2 * n_pair, 2):
             pair.append(pair_str[j])
-            score.append(float(pair_str[j+1]))
+            score.append(float(pair_str[j + 1]))
         img_ids.append(img_id)
-        pairs[img_id] = {'id': img_id, 'index': i//2, 'pair': pair, 'score': score}
-    pairs['id_list'] = img_ids
+        pairs[img_id] = {"id": img_id, "index": i // 2, "pair": pair, "score": score}
+    pairs["id_list"] = img_ids
     return pairs
 
 
 def load_cam(file: str, max_d, interval_scale=1, override=False):
-    """ read camera txt file """
+    """read camera txt file"""
     cam = np.zeros((2, 4, 4))
     with open(file) as f:
         words = f.read().split()
@@ -153,7 +160,7 @@ class ListModule(nn.Module):
         elif isinstance(modules, list):
             iterable = enumerate(modules)
         else:
-            raise TypeError('modules should be OrderedDict or List.')
+            raise TypeError("modules should be OrderedDict or List.")
         for name, module in iterable:
             if not isinstance(module, nn.Module):
                 module = ListModule(module)
@@ -163,7 +170,7 @@ class ListModule(nn.Module):
 
     def __getitem__(self, idx):
         if idx < 0 or idx >= len(self._modules):
-            raise IndexError('index {} is out of range'.format(idx))
+            raise IndexError("index {} is out of range".format(idx))
         it = iter(self._modules.values())
         for _ in range(idx):
             next(it)
@@ -202,11 +209,15 @@ class BasicBlock(nn.Module):
 
     def conv1x1(self, in_planes, out_planes, stride=1):
         """1x1 convolution"""
-        return self.conv_fn(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+        return self.conv_fn(
+            in_planes, out_planes, kernel_size=1, stride=stride, bias=False
+        )
 
     def conv3x3(self, in_planes, out_planes, stride=1):
         """3x3 convolution with padding"""
-        return self.conv_fn(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        return self.conv_fn(
+            in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
 
     def forward(self, x):
         residual = x
@@ -234,8 +245,14 @@ def _make_layer(inplanes, block, planes, blocks, stride=1, dim=2):
     # bn_fn = nn.GroupNorm
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
-            conv_fn(inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
-            bn_fn(planes * block.expansion)
+            conv_fn(
+                inplanes,
+                planes * block.expansion,
+                kernel_size=1,
+                stride=stride,
+                bias=False,
+            ),
+            bn_fn(planes * block.expansion),
         )
 
     layers = []
@@ -248,10 +265,18 @@ def _make_layer(inplanes, block, planes, blocks, stride=1, dim=2):
 
 
 class UNet(nn.Module):
-
-    def __init__(self, inplanes: int, enc: int, dec: int, initial_scale: int,
-                 bottom_filters: List[int], filters: List[int], head_filters: List[int],
-                 prefix: str, dim: int=2):
+    def __init__(
+        self,
+        inplanes: int,
+        enc: int,
+        dec: int,
+        initial_scale: int,
+        bottom_filters: List[int],
+        filters: List[int],
+        head_filters: List[int],
+        prefix: str,
+        dim: int = 2,
+    ):
         super(UNet, self).__init__()
 
         conv_fn = nn.Conv2d if dim == 2 else nn.Conv3d
@@ -264,8 +289,10 @@ class UNet(nn.Module):
 
         self.bottom_blocks = OrderedDict()
         for f in bottom_filters:
-            block = _make_layer(prev_f, BasicBlock, f, enc, 1 if idx==0 else 2, dim=dim)
-            self.bottom_blocks[f'{prefix}{current_scale}_{idx}'] = block
+            block = _make_layer(
+                prev_f, BasicBlock, f, enc, 1 if idx == 0 else 2, dim=dim
+            )
+            self.bottom_blocks[f"{prefix}{current_scale}_{idx}"] = block
             idx += 1
             current_scale *= 2
             prev_f = f
@@ -273,8 +300,10 @@ class UNet(nn.Module):
 
         self.enc_blocks = OrderedDict()
         for f in filters:
-            block = _make_layer(prev_f, BasicBlock, f, enc, 1 if idx == 0 else 2, dim=dim)
-            self.enc_blocks[f'{prefix}{current_scale}_{idx}'] = block
+            block = _make_layer(
+                prev_f, BasicBlock, f, enc, 1 if idx == 0 else 2, dim=dim
+            )
+            self.enc_blocks[f"{prefix}{current_scale}_{idx}"] = block
             idx += 1
             current_scale *= 2
             prev_f = f
@@ -284,13 +313,13 @@ class UNet(nn.Module):
         for f in filters[-2::-1]:
             block = [
                 deconv_fn(prev_f, f, 3, 2, 1, 1, bias=False),
-                conv_fn(2*f, f, 3, 1, 1, bias=False),
+                conv_fn(2 * f, f, 3, 1, 1, bias=False),
             ]
             if dec > 0:
                 block.append(_make_layer(f, BasicBlock, f, dec, 1, dim=dim))
             # nn.init.xavier_uniform_(block[0].weight)
             # nn.init.xavier_uniform_(block[1].weight)
-            self.dec_blocks[f'{prefix}{current_scale}_{idx}'] = block
+            self.dec_blocks[f"{prefix}{current_scale}_{idx}"] = block
             idx += 1
             current_scale //= 2
             prev_f = f
@@ -298,14 +327,12 @@ class UNet(nn.Module):
 
         self.head_blocks = OrderedDict()
         for f in head_filters:
-            block = [
-                deconv_fn(prev_f, f, 3, 2, 1, 1, bias=False)
-            ]
+            block = [deconv_fn(prev_f, f, 3, 2, 1, 1, bias=False)]
             if dec > 0:
                 block.append(_make_layer(f, BasicBlock, f, dec, 1, dim=dim))
             block = nn.Sequential(*block)
             # nn.init.xavier_uniform_(block[0])
-            self.head_blocks[f'{prefix}{current_scale}_{idx}'] = block
+            self.head_blocks[f"{prefix}{current_scale}_{idx}"] = block
             idx += 1
             current_scale //= 2
             prev_f = f
@@ -320,35 +347,41 @@ class UNet(nn.Module):
             enc_out.append(x)
         dec_out = [x]
         for i, b in enumerate(self.dec_blocks):
-            if len(b) == 3: deconv, post_concat, res = b
-            elif len(b) == 2: deconv, post_concat = b
+            if len(b) == 3:
+                deconv, post_concat, res = b
+            elif len(b) == 2:
+                deconv, post_concat = b
             x = deconv(x)
-            x = torch.cat([x, enc_out[-2-i]], 1)
+            x = torch.cat([x, enc_out[-2 - i]], 1)
             x = post_concat(x)
-            if len(b) == 3: x = res(x)
+            if len(b) == 3:
+                x = res(x)
             dec_out.append(x)
         for b in self.head_blocks:
             x = b(x)
             dec_out.append(x)
-        if multi_scale == 1: return x
-        else: return dec_out[-multi_scale:]
+        if multi_scale == 1:
+            return x
+        else:
+            return dec_out[-multi_scale:]
 
 
 class FeatExt(nn.Module):
-
     def __init__(self):
         super(FeatExt, self).__init__()
         self.init_conv = nn.Sequential(
-            nn.Conv2d(3, 16, 5, 2, 2, bias=False),
-            nn.BatchNorm2d(16),
-            nn.ReLU()
+            nn.Conv2d(3, 16, 5, 2, 2, bias=False), nn.BatchNorm2d(16), nn.ReLU()
         )
-        self.unet = UNet(16, 2, 1, 2, [], [32, 64, 128], [], '2d', 2)
+        self.unet = UNet(16, 2, 1, 2, [], [32, 64, 128], [], "2d", 2)
         self.final_conv_1 = nn.Conv2d(128, 32, 3, 1, 1, bias=False)
         self.final_conv_2 = nn.Conv2d(64, 32, 3, 1, 1, bias=False)
         self.final_conv_3 = nn.Conv2d(32, 32, 3, 1, 1, bias=False)
 
-        feat_ext_dict = {k[16:]:v for k,v in torch.load('weights/vismvsnet.pt')['state_dict'].items() if k.startswith('module.feat_ext')}
+        feat_ext_dict = {
+            k[16:]: v
+            for k, v in torch.load("weights/vismvsnet.pt")["state_dict"].items()
+            if k.startswith("module.feat_ext")
+        }
         self.load_state_dict(feat_ext_dict)
 
     def forward(self, x):
@@ -357,9 +390,19 @@ class FeatExt(nn.Module):
         return self.final_conv_1(out1), self.final_conv_2(out2), self.final_conv_3(out3)
 
 
-def get_feat_loss(diff_surf_pts, uncerts, feat, cam, feat_src, src_cams, size, center, network_object_mask,
-                       object_mask):
-    mask = network_object_mask & object_mask # [B * N_rays]
+def get_feat_loss(
+    diff_surf_pts,
+    uncerts,
+    feat,
+    cam,
+    feat_src,
+    src_cams,
+    size,
+    center,
+    network_object_mask,
+    object_mask,
+):
+    mask = network_object_mask & object_mask  # [B * N_rays]
     size = size[:1]
     center = center[:1]
     if (mask).sum() == 0:
@@ -375,39 +418,60 @@ def get_feat_loss(diff_surf_pts, uncerts, feat, cam, feat_src, src_cams, size, c
     # for each image in minibatch
     for view_i, slice_ in enumerate(slices):
         if slice_.start < slice_.stop:
-
             # projection
             diff_surf_pts_slice = diff_surf_pts[slice_]
-            pts_world = (diff_surf_pts_slice / 2 * size.view(1, 1) + center.view(1, 3)).view(1, -1, 1, 3, 1)  # 1m131, where m == n_masked_rays
-            pts_world = torch.cat([pts_world, torch.ones_like(pts_world[..., -1:, :])], dim=-2)  # 1m141
+            pts_world = (
+                diff_surf_pts_slice / 2 * size.view(1, 1) + center.view(1, 3)
+            ).view(
+                1, -1, 1, 3, 1
+            )  # 1m131, where m == n_masked_rays
+            pts_world = torch.cat(
+                [pts_world, torch.ones_like(pts_world[..., -1:, :])], dim=-2
+            )  # 1m141
             # rgb_pack = torch.cat([rgb[view_i:view_i+1], rgb_src[view_i]], dim=0)  # v3hw
-            cam_pack = torch.cat([cam[view_i:view_i + 1], src_cams[view_i]], dim=0)  # v244, v == 1 + n_src; here cam is depth/feature cam upscaled by 2
+            cam_pack = torch.cat(
+                [cam[view_i : view_i + 1], src_cams[view_i]], dim=0
+            )  # v244, v == 1 + n_src; here cam is depth/feature cam upscaled by 2
             pts_img = idx_cam2img(idx_world2cam(pts_world, cam_pack), cam_pack)  # vm131
 
             # gathering
             grid = pts_img[..., :2, 0]  # vm12
-            # feat2_pack = self.feat_ext(rgb_pack)[2]  # vchw 
-            feat2_pack = torch.cat([feat[view_i:view_i + 1], feat_src[view_i]], dim=0) # [v, n_channel, h, w]
-            grid_n = normalize_for_grid_sample(feat2_pack, grid / 2) # [v, m, 1, 2]
-            grid_in_range = get_in_range(grid_n) # [v, m, 1]
-            valid_mask = (grid_in_range[:1, ...] * grid_in_range[1:, ...]).unsqueeze(1) > 0.5  # [n_src, 1, m, 1]
-            gathered_feat = F.grid_sample(feat2_pack, grid_n, mode='bilinear', padding_mode='zeros',
-                                          align_corners=False)  # vcm1
+            # feat2_pack = self.feat_ext(rgb_pack)[2]  # vchw
+            feat2_pack = torch.cat(
+                [feat[view_i : view_i + 1], feat_src[view_i]], dim=0
+            )  # [v, n_channel, h, w]
+            grid_n = normalize_for_grid_sample(feat2_pack, grid / 2)  # [v, m, 1, 2]
+            grid_in_range = get_in_range(grid_n)  # [v, m, 1]
+            valid_mask = (grid_in_range[:1, ...] * grid_in_range[1:, ...]).unsqueeze(
+                1
+            ) > 0.5  # [n_src, 1, m, 1]
+            gathered_feat = F.grid_sample(
+                feat2_pack,
+                grid_n,
+                mode="bilinear",
+                padding_mode="zeros",
+                align_corners=False,
+            )  # vcm1
 
             # calculation
             gathered_norm = gathered_feat.norm(dim=1, keepdim=True)  # v1m1
-            corr = (gathered_feat[:1] * gathered_feat[1:]).sum(dim=1, keepdim=True) \
-                   / gathered_norm[:1].clamp(min=1e-9) / gathered_norm[1:].clamp(min=1e-9)  # (v-1)1m1
+            corr = (
+                (gathered_feat[:1] * gathered_feat[1:]).sum(dim=1, keepdim=True)
+                / gathered_norm[:1].clamp(min=1e-9)
+                / gathered_norm[1:].clamp(min=1e-9)
+            )  # (v-1)1m1
             corr_loss = (1 - corr).abs()
             if uncerts is None:
                 diff_mask = corr_loss < 0.5
-                #print('feat loss mask', (valid_mask & diff_mask).sum().item(), '/',
-                      #valid_mask.size()[0] * valid_mask.size()[2])
+                # print('feat loss mask', (valid_mask & diff_mask).sum().item(), '/',
+                # valid_mask.size()[0] * valid_mask.size()[2])
                 sample_loss = (corr_loss * valid_mask * diff_mask).mean()
             else:
                 uncert = uncerts[view_i].unsqueeze(1).unsqueeze(3)  # (v-1)1m1
-                #print(f'uncert: {uncert.min():.4f}, {uncert.median():.4f}, {uncert.max():.4f}')
-                sample_loss = ((corr_loss * (-uncert).exp() + uncert) * valid_mask).mean()
+                # print(f'uncert: {uncert.min():.4f}, {uncert.median():.4f}, {uncert.max():.4f}')
+                sample_loss = (
+                    (corr_loss * (-uncert).exp() + uncert) * valid_mask
+                ).mean()
         else:
             sample_loss = torch.zeros(1).float().cuda()
         loss.append(sample_loss)

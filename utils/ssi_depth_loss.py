@@ -50,7 +50,6 @@ def reduction_image_based(image_loss, M):
 
 
 def mse_loss(prediction, target, mask, reduction=reduction_batch_based):
-
     M = torch.sum(mask, (1, 2))
     res = prediction - target
     image_loss = torch.sum(mask * res * res, (1, 2))
@@ -59,7 +58,6 @@ def mse_loss(prediction, target, mask, reduction=reduction_batch_based):
 
 
 def gradient_loss(prediction, target, mask, reduction=reduction_batch_based):
-
     M = torch.sum(mask, (1, 2))
 
     diff = prediction - target
@@ -79,10 +77,10 @@ def gradient_loss(prediction, target, mask, reduction=reduction_batch_based):
 
 
 class MSELoss(nn.Module):
-    def __init__(self, reduction='batch-based'):
+    def __init__(self, reduction="batch-based"):
         super().__init__()
 
-        if reduction == 'batch-based':
+        if reduction == "batch-based":
             self.__reduction = reduction_batch_based
         else:
             self.__reduction = reduction_image_based
@@ -92,10 +90,10 @@ class MSELoss(nn.Module):
 
 
 class GradientLoss(nn.Module):
-    def __init__(self, scales=4, reduction='batch-based'):
+    def __init__(self, scales=4, reduction="batch-based"):
         super().__init__()
 
-        if reduction == 'batch-based':
+        if reduction == "batch-based":
             self.__reduction = reduction_batch_based
         else:
             self.__reduction = reduction_image_based
@@ -108,14 +106,18 @@ class GradientLoss(nn.Module):
         for scale in range(self.__scales):
             step = pow(2, scale)
 
-            total += gradient_loss(prediction[:, ::step, ::step], target[:, ::step, ::step],
-                                   mask[:, ::step, ::step], reduction=self.__reduction)
+            total += gradient_loss(
+                prediction[:, ::step, ::step],
+                target[:, ::step, ::step],
+                mask[:, ::step, ::step],
+                reduction=self.__reduction,
+            )
 
         return total
 
 
 class ScaleAndShiftInvariantLoss(nn.Module):
-    def __init__(self, alpha=0.5, scales=4, reduction='batch-based'):
+    def __init__(self, alpha=0.5, scales=4, reduction="batch-based"):
         super().__init__()
 
         self.__data_loss = MSELoss(reduction=reduction)
@@ -125,13 +127,14 @@ class ScaleAndShiftInvariantLoss(nn.Module):
         self.__prediction_ssi = None
 
     def forward(self, prediction, target, mask):
-
         scale, shift = compute_scale_and_shift(prediction, target, mask)
         self.__prediction_ssi = scale.view(-1, 1, 1) * prediction + shift.view(-1, 1, 1)
 
         total = self.__data_loss(self.__prediction_ssi, target, mask)
         if self.__alpha > 0:
-            total += self.__alpha * self.__regularization_loss(self.__prediction_ssi, target, mask)
+            total += self.__alpha * self.__regularization_loss(
+                self.__prediction_ssi, target, mask
+            )
 
         return total
 

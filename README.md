@@ -1,67 +1,65 @@
-# Bundle-Adjusting NeuS
+<p align="center">
 
-NeuS with no prior camera parameters and sparse views
+  <h1 align="center">Bundle-Adjusting NeuS</h1>
+  <p align="center">
+    <a href="https://darkgeekms.github.io/">Mohamed S. Sabae</a>
+    ·
+    <a href="https://scholar.google.com/citations?user=i1qvgx4AAAAJ&hl=en">Hoda A. Baraka</a>
+    ·
+    <a href="https://scholar.google.com/citations?user=38yr_I8AAAAJ&hl=en">Mayada M. Hadhoud</a>
 
-## Usage
+  </p>
+  <h3 align="center"><a href="https://arxiv.org/abs/2312.15238">Original Paper</a> | <a href="">Extended Paper</a> | <a href="">Project Page</a></h3>
+  <div align="center"></div>
+</p>
 
-#### Data Convention
-The data is organized as follows:
+<p align="center">
+  <a href="">
+    <img src="./media/results.png" alt="Logo" width="95%">
+  </a>
+</p>
 
-```
-<case_name>
-|-- cameras_xxx.npz    # camera parameters
-|-- image
-    |-- 000.png        # target image for each view
-    |-- 001.png
-    ...
-|-- mask
-    |-- 000.png        # target mask each view (For unmasked setting, set all pixels as 255)
-    |-- 001.png
-    ...
-```
+<p align="center">
+Neural implicit surface reconstruction method that extends NeuS by enabling joint camera pose optimization.
+</p>
 
-Here the `cameras_xxx.npz` follows the data format in [IDR](https://github.com/lioryariv/idr/blob/main/DATA_CONVENTION.md), where `world_mat_xx` denotes the world to image projection matrix, and `scale_mat_xx` denotes the normalization matrix.
+<p align="center">
+  <a href="">
+    <img src="./media/architecture.png" alt="Logo" width="90%">
+  </a>
+</p>
 
-### Setup
+<p align="center">
+Overview of the proposed method.
+</p>
 
-Clone this repository
+# Installation
 
-```shell
+- Clone the repository:
+
+```bash
 git clone https://github.com/DarkGeekMS/bundle-adjusting-neus.git
 cd bundle-adjusting-neus
 pip install -r requirements.txt
 ```
 
-<details>
-  <summary> Dependencies (click to expand) </summary>
+- Refer to [Neus](https://github.com/Totoro97/NeuS) for more information on data convention.
 
-  - torch==1.8.0
-  - opencv_python==4.5.2.52
-  - trimesh==3.9.8 
-  - numpy==1.19.2
-  - pyhocon==0.3.57
-  - icecream==2.1.0
-  - tqdm==4.50.2
-  - scipy==1.7.0
-  - PyMCubes==0.1.2
+# Usage
 
-</details>
-
-### Running
-
-- **Training with no pose priors**
+- Train with no pose priors:
 
 ```shell
 python exp_runner.py --mode train --conf ./confs/ba_no_poses.conf --case <case_name>
 ```
 
-- **Training with noisy pose priors**
+- Train with noisy pose priors:
 
 ```shell
 python exp_runner.py --mode train --conf ./confs/ba_noisy_poses.conf --case <case_name>
 ```
 
-- **Extract surface from trained model** 
+- Extract surface from trained model:
 
 ```shell
 python exp_runner.py --mode validate_mesh --conf <config_file> --case <case_name> --is_continue # use latest checkpoint
@@ -69,14 +67,10 @@ python exp_runner.py --mode validate_mesh --conf <config_file> --case <case_name
 
 The corresponding mesh can be found in `exp/<case_name>/<exp_name>/meshes/<iter_steps>.ply`.
 
-- **View interpolation**
+- View interpolation:
 
 ```shell
 python exp_runner.py --mode interpolate_<img_idx_0>_<img_idx_1> --conf <config_file> --case <case_name> --is_continue # use latest checkpoint
 ```
 
 The corresponding image set of view interpolation can be found in `exp/<case_name>/<exp_name>/render/`.
-
-### Train Bundle-Adjusting NeuS with your custom data
-
-More information can be found in [preprocess_custom_data](https://github.com/DarkGeekMS/bundle-adjusting-neus/tree/main/preprocess_custom_data).

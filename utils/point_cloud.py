@@ -1,6 +1,6 @@
-import torch
 import numpy as np
 import plotly.graph_objects as go
+import torch
 
 
 def arange_pixels(resolution, batch_size=1, image_range=(-1.0, 1.0)):
@@ -10,9 +10,13 @@ def arange_pixels(resolution, batch_size=1, image_range=(-1.0, 1.0)):
 
     # arrange pixel location in scale resolution
     pixel_locations = torch.meshgrid(torch.arange(0, h), torch.arange(0, w))
-    pixel_locations = torch.stack(
-        [pixel_locations[1], pixel_locations[0]],
-        dim=-1).long().view(1, -1, 2).repeat(batch_size, 1, 1).float()
+    pixel_locations = (
+        torch.stack([pixel_locations[1], pixel_locations[0]], dim=-1)
+        .long()
+        .view(1, -1, 2)
+        .repeat(batch_size, 1, 1)
+        .float()
+    )
 
     return pixel_locations
 
@@ -44,7 +48,7 @@ def visualize_point_cloud(points_3d, save_path):
     x = points_3d[:, 0]
     y = points_3d[:, 1]
     z = points_3d[:, 2]
-    fig = go.Figure(data=[go.Scatter3d(x=x, y=y, z=z, mode='markers')])
+    fig = go.Figure(data=[go.Scatter3d(x=x, y=y, z=z, mode="markers")])
     fig.write_html(save_path)
 
 
@@ -53,7 +57,9 @@ def comp_closest_pts_idx_with_split(pts_src, pts_des):
     pts_src_list = torch.split(pts_src, 500000, dim=1)
     idx_list = []
     for pts_src_sec in pts_src_list:
-        diff = pts_src_sec[:, :, np.newaxis] - pts_des[:, np.newaxis, :]  # (3, S, 1) - (3, 1, D) -> (3, S, D)
+        diff = (
+            pts_src_sec[:, :, np.newaxis] - pts_des[:, np.newaxis, :]
+        )  # (3, S, 1) - (3, 1, D) -> (3, S, D)
         dist = torch.linalg.norm(diff, dim=0)  # (S, D)
         closest_idx = torch.argmin(dist, dim=1)  # (S,)
         idx_list.append(closest_idx)

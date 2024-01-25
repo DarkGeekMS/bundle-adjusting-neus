@@ -3,16 +3,15 @@ import torch.nn as nn
 
 
 class LearnDistortion(nn.Module):
-
     def __init__(self, num_cams, learn_scale, learn_shift, fix_scaleN):
         super(LearnDistortion, self).__init__()
         self.global_scales = nn.Parameter(
             torch.ones(size=(num_cams, 1), dtype=torch.float32),
-            requires_grad=learn_scale
+            requires_grad=learn_scale,
         )
         self.global_shifts = nn.Parameter(
             torch.zeros(size=(num_cams, 1), dtype=torch.float32),
-            requires_grad=learn_shift
+            requires_grad=learn_shift,
         )
         self.fix_scaleN = fix_scaleN
         self.num_cams = num_cams
