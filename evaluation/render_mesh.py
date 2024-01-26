@@ -5,7 +5,7 @@ import bpy
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from models.dataset import load_K_Rt_from_P
+from utils.camera_utils import load_K_Rt_from_P
 
 
 def read_camera(camera_path, is_colmap):

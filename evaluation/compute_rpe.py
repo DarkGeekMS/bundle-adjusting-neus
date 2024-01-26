@@ -2,7 +2,7 @@ import argparse
 
 import numpy as np
 
-from models.dataset import load_K_Rt_from_P
+from utils.camera_utils import load_K_Rt_from_P
 
 
 def rotation_error(pose_error):

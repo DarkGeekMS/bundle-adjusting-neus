@@ -58,7 +58,7 @@ def export_learned_cameras(conf):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--conf", type=str, default="./confs/base.conf")
+    parser.add_argument("--conf", type=str, default="./configs/ba_no_poses.conf")
     parser.add_argument("--case", type=str, default="")
 
     args = parser.parse_args()

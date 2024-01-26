@@ -3,8 +3,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from utils.features import get_feat_loss
-from utils.point_cloud import get_pc_loss, transform_pixel_to_world
+from losses.features_loss import get_feat_loss
+from losses.point_cloud_loss import get_pc_loss, transform_pixel_to_world
 
 
 def find_surface_points(sdf, d_all, device="cuda"):

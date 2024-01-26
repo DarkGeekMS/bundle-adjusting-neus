@@ -1,43 +1,11 @@
 # These functions are borrowed from MVSDF: https://github.com/jzhangbs/MVSDF
 from collections import OrderedDict
-from typing import List, Tuple, Union
+from typing import List, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-def scale_camera(cam: Union[np.ndarray, torch.Tensor], scale: Union[Tuple, float] = 1):
-    """resize input in order to produce sampled depth map"""
-    if type(scale) != tuple:
-        scale = (scale, scale)
-    if type(cam) == np.ndarray:
-        new_cam = np.copy(cam)
-        # focal:
-        new_cam[1, 0, 0] = cam[1, 0, 0] * scale[0]
-        new_cam[1, 1, 1] = cam[1, 1, 1] * scale[1]
-        # principle point:
-        new_cam[1, 0, 2] = cam[1, 0, 2] * scale[0]
-        new_cam[1, 1, 2] = cam[1, 1, 2] * scale[1]
-    elif type(cam) == torch.Tensor:
-        new_cam = cam.clone()
-        # focal:
-        new_cam[..., 1, 0, 0] = cam[..., 1, 0, 0] * scale[0]
-        new_cam[..., 1, 1, 1] = cam[..., 1, 1, 1] * scale[1]
-        # principle point:
-        new_cam[..., 1, 0, 2] = cam[..., 1, 0, 2] * scale[0]
-        new_cam[..., 1, 1, 2] = cam[..., 1, 1, 2] * scale[1]
-    # elif type(cam) == tf.Tensor:
-    #     scale_tensor = np.ones((1, 2, 4, 4))
-    #     scale_tensor[0, 1, 0, 0] = scale[0]
-    #     scale_tensor[0, 1, 1, 1] = scale[1]
-    #     scale_tensor[0, 1, 0, 2] = scale[0]
-    #     scale_tensor[0, 1, 1, 2] = scale[1]
-    #     new_cam = cam * scale_tensor
-    else:
-        raise TypeError
-    return new_cam
 
 
 def bin_op_reduce(lst, func):

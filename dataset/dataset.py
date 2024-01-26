@@ -1,42 +1,18 @@
 import os
 from glob import glob
 
-import cv2 as cv
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
 
-from models.camera import LearnFocal, LearnPose, make_c2w
+from losses.features_loss import FeatExt, load_pair
+from losses.point_cloud_loss import arange_pixels
+from models.camera import LearnFocal, LearnPose
 from models.distortion import LearnDistortion
-from utils.features import FeatExt, load_pair, scale_camera
-from utils.point_cloud import arange_pixels
-
-
-# This function is borrowed from IDR: https://github.com/lioryariv/idr
-def load_K_Rt_from_P(filename, P=None):
-    if P is None:
-        lines = open(filename).read().splitlines()
-        if len(lines) == 4:
-            lines = lines[1:]
-        lines = [[x[0], x[1], x[2], x[3]] for x in (x.split(" ") for x in lines)]
-        P = np.asarray(lines).astype(np.float32).squeeze()
-
-    out = cv.decomposeProjectionMatrix(P)
-    K = out[0]
-    R = out[1]
-    t = out[2]
-
-    K = K / K[2, 2]
-    intrinsics = np.eye(4)
-    intrinsics[:3, :3] = K
-
-    pose = np.eye(4, dtype=np.float32)
-    pose[:3, :3] = R.transpose()
-    pose[:3, 3] = (t[:3] / t[3])[:, 0]
-
-    return intrinsics, pose
+from utils.camera_utils import load_K_Rt_from_P, make_c2w, scale_camera
 
 
 class Dataset:
@@ -75,11 +51,11 @@ class Dataset:
         self.images_lis = sorted(glob(os.path.join(self.data_dir, "image/*.png")))
         self.n_images = len(self.images_lis)
         self.images_np = (
-            np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
+            np.stack([cv2.imread(im_name) for im_name in self.images_lis]) / 256.0
         )
         self.masks_lis = sorted(glob(os.path.join(self.data_dir, "mask/*.png")))
         self.masks_np = (
-            np.stack([cv.imread(im_name) for im_name in self.masks_lis]) / 256.0
+            np.stack([cv2.imread(im_name) for im_name in self.masks_lis]) / 256.0
         )
         self.depth_lis = sorted(glob(os.path.join(self.data_dir, "depth/*.npy")))
         self.depths_np = np.stack(
@@ -94,7 +70,8 @@ class Dataset:
 
         self.scale_mats_np = []
 
-        # scale_mat: used for coordinate normalization, we assume the scene to render is inside a unit sphere at origin.
+        # scale_mat: used for coordinate normalization
+        # we assume the scene to render is inside a unit sphere at origin.
         self.scale_mats_np = [
             camera_dict["scale_mat_%d" % idx].astype(np.float32)
             for idx in range(self.n_images)
@@ -260,9 +237,8 @@ class Dataset:
         """
         Generate rays at world space from one camera.
         """
-        l = resolution_level
-        tx = torch.linspace(0, self.W - 1, self.W // l)
-        ty = torch.linspace(0, self.H - 1, self.H // l)
+        tx = torch.linspace(0, self.W - 1, self.W // resolution_level)
+        ty = torch.linspace(0, self.H - 1, self.H // resolution_level)
         pixels_x, pixels_y = torch.meshgrid(tx, ty)
         p = torch.stack(
             [pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1
@@ -369,9 +345,8 @@ class Dataset:
         """
         Interpolate pose between two cameras.
         """
-        l = resolution_level
-        tx = torch.linspace(0, self.W - 1, self.W // l)
-        ty = torch.linspace(0, self.H - 1, self.H // l)
+        tx = torch.linspace(0, self.W - 1, self.W // resolution_level)
+        ty = torch.linspace(0, self.H - 1, self.H // resolution_level)
         pixels_x, pixels_y = torch.meshgrid(tx, ty)
         p = torch.stack(
             [pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1
@@ -417,9 +392,9 @@ class Dataset:
         return near, far
 
     def image_at(self, idx, resolution_level):
-        img = cv.imread(self.images_lis[idx])
+        img = cv2.imread(self.images_lis[idx])
         return (
-            cv.resize(img, (self.W // resolution_level, self.H // resolution_level))
+            cv2.resize(img, (self.W // resolution_level, self.H // resolution_level))
         ).clip(0, 255)
 
     def undistort_depth(self, img_idx, depth):

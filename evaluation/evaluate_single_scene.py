@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import trimesh
 from skimage.morphology import binary_dilation, disk
 
-from models.dataset import load_K_Rt_from_P
+from utils.camera_utils import load_K_Rt_from_P
 
 
 def cull_scan(scan, mesh_path, result_mesh_file, data_path):
