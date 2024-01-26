@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="">
-    <img src="./media/architecture.png" alt="Logo" width="90%">
+    <img src="./docs/architecture.png" alt="Logo" width="90%">
   </a>
 </p>
 
@@ -33,7 +33,7 @@ cd bundle-adjusting-neus
 pip install -r requirements.txt
 ```
 
-- Refer to [Neus](https://github.com/Totoro97/NeuS) for more information on data convention.
+- Refer to [NeuS](https://github.com/Totoro97/NeuS) for more information on data convention.
 
 # Usage
 
