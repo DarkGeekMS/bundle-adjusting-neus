@@ -76,7 +76,7 @@ class Runner:
         self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
 
         # Initialize WandB run
-        wandb.init(project="sparse_bundle_neus", config=vars(self.conf))
+        wandb.init(project="bundle_adjusting_neus", config=vars(self.conf))
         wandb.run.name = self.exp_name
         wandb.run.save()
 
