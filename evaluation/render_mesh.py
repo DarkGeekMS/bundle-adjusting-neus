@@ -71,6 +71,8 @@ def render_mesh_from_camera(
             bpy.ops.object.mode_set(mode="EDIT")
             bpy.ops.mesh.split_normals()
 
+    bpy.context.scene.eevee.shadow_cube_size = "64"
+
     bpy.ops.object.mode_set(mode="OBJECT")
 
     # read camera views
