@@ -71,8 +71,6 @@ def render_mesh_from_camera(
             bpy.ops.object.mode_set(mode="EDIT")
             bpy.ops.mesh.split_normals()
 
-    bpy.context.scene.eevee.shadow_cube_size = "64"
-
     bpy.ops.object.mode_set(mode="OBJECT")
 
     # read camera views
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mesh_path", type=str)
     parser.add_argument("--camera_path", type=str)
-    parser.add_argument("--camera_lens", type=float, default=30.0)
+    parser.add_argument("--camera_lens", type=float, default=15.0)
     parser.add_argument("--output_path", type=str)
     parser.add_argument("--is_colmap", default=False, action="store_true")
 
