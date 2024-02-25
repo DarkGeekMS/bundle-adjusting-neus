@@ -51,7 +51,7 @@ def read_camera(camera_path, is_colmap):
 
 
 def render_mesh_from_camera(
-    mesh_path, camera_path, camera_lens, light_position, output_path, is_colmap
+    mesh_path, camera_path, camera_lens, output_path, is_colmap
 ):
     # clear blender scene
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -93,8 +93,45 @@ def render_mesh_from_camera(
             cam.scale = (-1.0, -1.0, -1.0)
 
         # setup scene light
-        light = bpy.data.objects["Light"]
-        light.location.z = light_position
+        light_1 = bpy.data.objects["Light"]
+        light_1.location.x = 20.0
+        light_1.location.y = 0.0
+        light_1.location.z = 0.0
+
+        light_2 = light_1.copy()
+        light_2.data = light_1.data.copy()
+        light_2.location.x = -20.0
+        light_2.location.y = 0.0
+        light_2.location.z = 0.0
+        bpy.context.collection.objects.link(light_2)
+
+        light_3 = light_1.copy()
+        light_3.data = light_1.data.copy()
+        light_3.location.x = 0.0
+        light_3.location.y = 20.0
+        light_3.location.z = 0.0
+        bpy.context.collection.objects.link(light_3)
+
+        light_4 = light_1.copy()
+        light_4.data = light_1.data.copy()
+        light_4.location.x = 0.0
+        light_4.location.y = -20.0
+        light_4.location.z = 0.0
+        bpy.context.collection.objects.link(light_4)
+
+        light_5 = light_1.copy()
+        light_5.data = light_1.data.copy()
+        light_5.location.x = 0.0
+        light_5.location.y = 0.0
+        light_5.location.z = 20.0
+        bpy.context.collection.objects.link(light_5)
+
+        light_6 = light_1.copy()
+        light_6.data = light_1.data.copy()
+        light_6.location.x = 0.0
+        light_6.location.y = 0.0
+        light_6.location.z = -20.0
+        bpy.context.collection.objects.link(light_6)
 
         # render mesh from camera view
         bpy.context.scene.render.image_settings.color_mode = "RGBA"
@@ -108,7 +145,6 @@ if __name__ == "__main__":
     parser.add_argument("--mesh_path", type=str)
     parser.add_argument("--camera_path", type=str)
     parser.add_argument("--camera_lens", type=float, default=30.0)
-    parser.add_argument("--light_position", type=float, default=-10.0)
     parser.add_argument("--output_path", type=str)
     parser.add_argument("--is_colmap", default=False, action="store_true")
 
@@ -120,7 +156,6 @@ if __name__ == "__main__":
         args.mesh_path,
         args.camera_path,
         args.camera_lens,
-        args.light_position,
         args.output_path,
         args.is_colmap,
     )
