@@ -78,6 +78,47 @@ def render_mesh_from_camera(
     # read camera views
     trans_list, rot_list = read_camera(camera_path, is_colmap)
 
+    # setup scene light
+    light_1 = bpy.data.objects["Light"]
+    light_1.location.x = 15.0
+    light_1.location.y = 0.0
+    light_1.location.z = 0.0
+
+    light_2 = light_1.copy()
+    light_2.data = light_1.data.copy()
+    light_2.location.x = -15.0
+    light_2.location.y = 0.0
+    light_2.location.z = 0.0
+    bpy.context.collection.objects.link(light_2)
+
+    light_3 = light_1.copy()
+    light_3.data = light_1.data.copy()
+    light_3.location.x = 0.0
+    light_3.location.y = 15.0
+    light_3.location.z = 0.0
+    bpy.context.collection.objects.link(light_3)
+
+    light_4 = light_1.copy()
+    light_4.data = light_1.data.copy()
+    light_4.location.x = 0.0
+    light_4.location.y = -15.0
+    light_4.location.z = 0.0
+    bpy.context.collection.objects.link(light_4)
+
+    light_5 = light_1.copy()
+    light_5.data = light_1.data.copy()
+    light_5.location.x = 0.0
+    light_5.location.y = 0.0
+    light_5.location.z = 15.0
+    bpy.context.collection.objects.link(light_5)
+
+    light_6 = light_1.copy()
+    light_6.data = light_1.data.copy()
+    light_6.location.x = 0.0
+    light_6.location.y = 0.0
+    light_6.location.z = -15.0
+    bpy.context.collection.objects.link(light_6)
+
     # loop over all camera views
     for cam_id, (trans, rot) in enumerate(zip(trans_list, rot_list)):
         # setup camera view
@@ -91,47 +132,6 @@ def render_mesh_from_camera(
         cam.rotation_euler[2] = rot[2]
         if not is_colmap:
             cam.scale = (-1.0, -1.0, -1.0)
-
-        # setup scene light
-        light_1 = bpy.data.objects["Light"]
-        light_1.location.x = 20.0
-        light_1.location.y = 0.0
-        light_1.location.z = 0.0
-
-        light_2 = light_1.copy()
-        light_2.data = light_1.data.copy()
-        light_2.location.x = -20.0
-        light_2.location.y = 0.0
-        light_2.location.z = 0.0
-        bpy.context.collection.objects.link(light_2)
-
-        light_3 = light_1.copy()
-        light_3.data = light_1.data.copy()
-        light_3.location.x = 0.0
-        light_3.location.y = 20.0
-        light_3.location.z = 0.0
-        bpy.context.collection.objects.link(light_3)
-
-        light_4 = light_1.copy()
-        light_4.data = light_1.data.copy()
-        light_4.location.x = 0.0
-        light_4.location.y = -20.0
-        light_4.location.z = 0.0
-        bpy.context.collection.objects.link(light_4)
-
-        light_5 = light_1.copy()
-        light_5.data = light_1.data.copy()
-        light_5.location.x = 0.0
-        light_5.location.y = 0.0
-        light_5.location.z = 20.0
-        bpy.context.collection.objects.link(light_5)
-
-        light_6 = light_1.copy()
-        light_6.data = light_1.data.copy()
-        light_6.location.x = 0.0
-        light_6.location.y = 0.0
-        light_6.location.z = -20.0
-        bpy.context.collection.objects.link(light_6)
 
         # render mesh from camera view
         bpy.context.scene.render.image_settings.color_mode = "RGBA"
