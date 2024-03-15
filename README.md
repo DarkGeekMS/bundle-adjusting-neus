@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-Neural implicit surface reconstruction method that extends NeuS by enabling joint camera pose optimization.
+Neural implicit surface reconstruction method that extends NeuS by enabling joint camera parameters optimization.
 </p>
 
 # Installation
@@ -37,16 +37,28 @@ pip install -r requirements.txt
 
 # Usage
 
-- Train with no pose priors:
+- Optimize with no pose priors:
 
 ```shell
 python main.py --mode train --conf ./configs/ba_no_poses.conf --case <case_name>
 ```
 
-- Train with noisy pose priors:
+- Optimize with noisy pose priors:
 
 ```shell
 python main.py --mode train --conf ./configs/ba_noisy_poses.conf --case <case_name>
+```
+
+- Optimize with no pose priors (with camera intrinsics):
+
+```shell
+python main.py --mode train --conf ./configs/ba_no_poses_int.conf --case <case_name>
+```
+
+- Optimize with noisy pose priors (with camera intrinsics):
+
+```shell
+python main.py --mode train --conf ./configs/ba_noisy_poses_int.conf --case <case_name>
 ```
 
 - Extract surface from trained model:

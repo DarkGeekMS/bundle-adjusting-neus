@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -29,6 +29,10 @@
         color: #007bff;
         text-decoration: none;
       }
+
+      .image-row {
+        display: flex;
+      }
     </style>
   </head>
   <body>
@@ -49,6 +53,19 @@
           >Mayada M. Hadhoud</a
         >
       </p>
+      <p>
+        <a href="https://arxiv.org/abs/2312.15238" target="_blank"
+          >Original Paper</a
+        >
+        |
+        <a href="" target="_blank">Extended Paper</a>
+        |
+        <a
+          href="https://github.com/DarkGeekMS/bundle-adjusting-neus"
+          target="_blank"
+          >Code</a
+        >
+      </p>
     </header>
 
     <section>
@@ -60,8 +77,487 @@
 
       <p>
         Neural implicit surface reconstruction method that extends NeuS by
-        enabling joint camera pose optimization.
+        enabling joint camera parameters optimization.
       </p>
     </section>
+    <section>
+      <h2>Object-level Results</h2>
+      <div class="image-grid">
+        <div class="image-row">
+          <div class="image-item">
+            <img
+              src="results/dtu/scan24/rgb.png"
+              alt="Image 1"
+              style="width: 200px; height: 200px"
+            />
+            <p>Reference RGB</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan24/ba-neus.png"
+              alt="Image 2"
+              style="width: 200px; height: 200px"
+            />
+            <p>BA-NeuS (ours)</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan24/neus.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>NeuS</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan24/colmap.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>COLMAP</p>
+          </div>
+        </div>
+
+        <div class="image-row">
+          <div class="image-item">
+            <img
+              src="results/dtu/scan37/rgb.png"
+              alt="Image 1"
+              style="width: 200px; height: 200px"
+            />
+            <p>Reference RGB</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan37/ba-neus.png"
+              alt="Image 2"
+              style="width: 200px; height: 200px"
+            />
+            <p>BA-NeuS (ours)</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan37/neus.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>NeuS</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan37/colmap.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>COLMAP</p>
+          </div>
+        </div>
+
+        <div class="image-row">
+          <div class="image-item">
+            <img
+              src="results/dtu/scan55/rgb.png"
+              alt="Image 1"
+              style="width: 200px; height: 200px"
+            />
+            <p>Reference RGB</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan55/ba-neus.png"
+              alt="Image 2"
+              style="width: 200px; height: 200px"
+            />
+            <p>BA-NeuS (ours)</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan55/neus.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>NeuS</p>
+          </div>
+          <div class="image-item">
+            <img
+              src="results/dtu/scan55/colmap.png"
+              alt="Image 3"
+              style="width: 200px; height: 200px"
+            />
+            <p>COLMAP</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/dtu/scan63/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan63/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan63/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan63/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/dtu/scan65/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan65/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan65/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan65/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/dtu/scan106/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan106/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan106/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan106/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/dtu/scan118/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan118/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan118/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/dtu/scan118/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/bear/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/bear/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/bear/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/bear/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/clock/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/clock/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/clock/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/clock/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/dog/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/dog/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/dog/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/dog/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/man/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/man/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/man/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/man/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/sculpture/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/sculpture/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/sculpture/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/sculpture/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/bmvs/stone/rgb.png"
+            alt="Image 1"
+            style="width: 200px; height: 200px"
+          />
+          <p>Reference RGB</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/stone/ba-neus.png"
+            alt="Image 2"
+            style="width: 200px; height: 200px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/stone/neus.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>NeuS</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/bmvs/stone/colmap.png"
+            alt="Image 3"
+            style="width: 200px; height: 200px"
+          />
+          <p>COLMAP</p>
+        </div>
+      </div>
+
+      <h2>Scene-level Results</h2>
+      <div class="image-row">
+        <div class="image-item">
+          <img
+            src="results/scannet/ba-neus.png"
+            alt="Image 2"
+            style="width: 640px; height: 360px"
+          />
+          <p>BA-NeuS (ours)</p>
+        </div>
+        <div class="image-item">
+          <img
+            src="results/scannet/monosdf.png"
+            alt="Image 3"
+            style="width: 640px; height: 360px"
+          />
+          <p>MonoSDF</p>
+        </div>
+      </div>
+    </section>
   </body>
-</html>
+</html> -->
